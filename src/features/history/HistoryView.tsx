@@ -8,11 +8,13 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { groupActivityEvents } from "@/lib/activity-events";
+import { SETTINGS_PROFILE_STORAGE_KEY, writeStoredSettingsProfile } from "@/lib/settings-storage";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
+import type { SettingsProfile } from "@/lib/settings";
 import type { ActivityEvent } from "@/types/domain";
 
 const filters = ["Tout", "Entrées", "Consommés", "Jetés", "Paramètres"];
-const SETTINGS_STORAGE_KEY = "ecofoodstock:settings-profile";
+const SETTINGS_STORAGE_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 
 export function HistoryView({ embedded = false }: { embedded?: boolean } = {}) {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
@@ -77,7 +79,7 @@ export function HistoryView({ embedded = false }: { embedded?: boolean } = {}) {
 
       // If undo restored settings from server metadata, mirror that in local storage.
       if (payload.restoredSettingsProfile) {
-        window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload.restoredSettingsProfile));
+        writeStoredSettingsProfile(window.localStorage, SETTINGS_STORAGE_KEY, payload.restoredSettingsProfile as SettingsProfile);
       }
 
       await loadHistory();

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bell, UserRound } from "lucide-react";
-import { defaultSettingsProfile } from "@/lib/settings";
+import { readStoredSettingsProfile, sanitizeAllStoredSettingsProfiles, SETTINGS_PROFILE_STORAGE_KEY } from "@/lib/settings-storage";
 import { getBrowserAccountStatus } from "@/lib/supabase/browser-account";
 
 export function Topbar() {
@@ -11,10 +11,10 @@ export function Topbar() {
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem("ecofoodstock:settings-profile");
+      sanitizeAllStoredSettingsProfiles(window.localStorage);
+      const stored = readStoredSettingsProfile(window.localStorage, [SETTINGS_PROFILE_STORAGE_KEY]);
       if (stored) {
-        const parsed = JSON.parse(stored) as typeof defaultSettingsProfile;
-        setModeLabel(parsed.appMode === "athlete" ? "Sportif" : "Grand Public");
+        setModeLabel(stored.appMode === "athlete" ? "Sportif" : "Grand Public");
         return;
       }
     } catch {

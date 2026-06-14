@@ -3,6 +3,8 @@ import { canUseDemoMode } from "@/lib/supabase/account-context";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { mockInventory } from "@/lib/mock-data";
 import { proxiedOffImageUrl } from "@/lib/image-proxy";
+import { formatExpirationLabel, getExpirationStatus } from "@/lib/expiration";
+import { createIconLabel, createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lines";
 import { normalizeQuantityUnit } from "@/lib/units";
 
 type InventorySummaryRow = {
@@ -62,74 +64,4 @@ export async function GET(req: Request) {
   }));
 
   return NextResponse.json({ ok: true, inventory });
-}
-
-function createInventoryLineId(productId: string, storageArea: string, unit: string) {
-  return `${productId}:${normalizeStorageArea(storageArea)}:${normalizeQuantityUnit(unit)}`;
-}
-
-function createIconLabel(name: string) {
-  const compact = name.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase();
-  return compact || "PR";
-}
-
-function normalizeStorageArea(value: string): "fresh" | "frozen" | "dry" | "other" {
-  if (value === "fresh" || value === "frozen" || value === "dry") {
-    return value;
-  }
-
-  return "other";
-}
-
-function formatExpirationLabel(expirationDate?: string) {
-  if (!expirationDate) {
-    return undefined;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiration = new Date(`${expirationDate}T00:00:00`);
-  const diffDays = Math.round((expiration.getTime() - today.getTime()) / 86_400_000);
-
-  if (diffDays <= 0) {
-    return "Expire aujourd'hui";
-  }
-
-  if (diffDays === 1) {
-    return "Expire demain";
-  }
-
-  if (diffDays <= 3) {
-    return `Expire dans ${diffDays} jours`;
-  }
-
-  const [year, month, day] = expirationDate.split("-");
-  return `Expire le ${day}/${month}/${year}`;
-}
-
-function getExpirationStatus(expirationDate?: string) {
-  if (!expirationDate) {
-    return undefined;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiration = new Date(`${expirationDate}T00:00:00`);
-  const diffDays = Math.round((expiration.getTime() - today.getTime()) / 86_400_000);
-
-  if (diffDays <= 0) {
-    return { label: "DLC aujourd'hui", tone: "red" as const };
-  }
-
-  if (diffDays === 1) {
-    return { label: "DLC demain", tone: "orange" as const };
-  }
-
-  if (diffDays <= 3) {
-    return { label: "DLC proche", tone: "orange" as const };
-  }
-
-  return undefined;
 }

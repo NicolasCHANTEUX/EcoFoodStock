@@ -1,6 +1,12 @@
 const OFF_IMAGE_HOSTS = new Set(["images.openfoodfacts.org", "static.openfoodfacts.org", "images.openfoodfacts.net"]);
+type OffImageSize = "100" | "200" | "400";
 
-export function proxiedOffImageUrl(url?: string | null) {
+type OffImageUrlOptions = {
+  proxy?: boolean;
+  size?: OffImageSize;
+};
+
+export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOptions = {}) {
   if (!url) {
     return undefined;
   }
@@ -13,8 +19,20 @@ export function proxiedOffImageUrl(url?: string | null) {
     }
 
     parsed.protocol = "https:";
-    return `/api/images?src=${encodeURIComponent(parsed.toString())}`;
+    const optimizedUrl = optimizeOffImageUrl(parsed, options.size ?? "200");
+
+    if (options.proxy === false) {
+      return optimizedUrl;
+    }
+
+    return `/api/images?src=${encodeURIComponent(optimizedUrl)}`;
   } catch {
     return url;
   }
+}
+
+function optimizeOffImageUrl(url: URL, size: OffImageSize) {
+  const nextUrl = new URL(url.toString());
+  nextUrl.pathname = nextUrl.pathname.replace(/\.(100|200|400)(\.(?:jpe?g|png|webp))$/i, `.${size}$2`);
+  return nextUrl.toString();
 }

@@ -3,9 +3,20 @@ import { NextResponse } from "next/server";
 const ALLOWED_HOSTS = new Set(["images.openfoodfacts.org", "static.openfoodfacts.org", "images.openfoodfacts.net"]);
 const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CACHED_IMAGES = 80;
+
+type CachedImage = {
+  body: ArrayBuffer;
+  contentType: string;
+  cachedAt: number;
+};
+
+const imageCache = new Map<string, CachedImage>();
 
 export async function GET(req: Request) {
-  const url = new URL(req.url).searchParams.get("src");
+  const requestUrl = new URL(req.url);
+  const url = requestUrl.searchParams.get("src");
 
   if (!url) {
     return NextResponse.json({ ok: false, message: "src required" }, { status: 400 });
@@ -19,8 +30,14 @@ export async function GET(req: Request) {
     }
 
     parsed.protocol = "https:";
+    const cacheKey = parsed.toString();
+    const cachedImage = getCachedImage(cacheKey);
 
-    const response = await fetchWithTimeout(parsed.toString());
+    if (cachedImage) {
+      return createImageResponse(cachedImage.body, cachedImage.contentType, "HIT");
+    }
+
+    const response = await fetchWithTimeout(cacheKey);
 
     if (!response.ok) {
       return NextResponse.json({ ok: false, message: "Unable to fetch image", status: response.status }, { status: 502 });
@@ -39,12 +56,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, message: "Image too large" }, { status: 413 });
     }
 
-    return new NextResponse(body, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
-      }
-    });
+    setCachedImage(cacheKey, { body, contentType, cachedAt: Date.now() });
+    return createImageResponse(body, contentType, "MISS");
   } catch {
     return NextResponse.json({ ok: false, message: "Invalid image url" }, { status: 400 });
   }
@@ -64,4 +77,43 @@ async function fetchWithTimeout(url: string) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function getCachedImage(key: string) {
+  const cachedImage = imageCache.get(key);
+
+  if (!cachedImage) {
+    return null;
+  }
+
+  if (Date.now() - cachedImage.cachedAt > IMAGE_CACHE_TTL_MS) {
+    imageCache.delete(key);
+    return null;
+  }
+
+  return cachedImage;
+}
+
+function setCachedImage(key: string, value: CachedImage) {
+  imageCache.set(key, value);
+
+  while (imageCache.size > MAX_CACHED_IMAGES) {
+    const oldestKey = imageCache.keys().next().value;
+
+    if (!oldestKey) {
+      break;
+    }
+
+    imageCache.delete(oldestKey);
+  }
+}
+
+function createImageResponse(body: ArrayBuffer, contentType: string, cacheStatus: "HIT" | "MISS") {
+  return new NextResponse(body, {
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800, immutable",
+      "X-EcoFoodStock-Image-Cache": cacheStatus
+    }
+  });
 }

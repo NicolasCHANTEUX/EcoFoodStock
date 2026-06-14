@@ -29,7 +29,9 @@ export function ProductThumbnail({ name, imageUrl, fallbackLabel, className }: P
           src={imageUrl}
           alt={name}
           className="h-full w-full object-cover"
+          decoding="async"
           loading="lazy"
+          referrerPolicy="no-referrer"
           onError={() => setHasImageError(true)}
         />
       ) : (

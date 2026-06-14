@@ -58,11 +58,55 @@ const preferredSuggestionBarcodes: Record<string, string> = {
   tomatoes: "3276558775128"
 };
 
+const SUGGESTION_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type SuggestionCacheEntry = {
+  expiresAt: number;
+  promise: Promise<ShoppingSuggestionResponse[]>;
+};
+
+const suggestionCache = new Map<DietType, SuggestionCacheEntry>();
+
 export async function GET(req: Request) {
   const diet = await resolveSuggestionDiet(req);
+  const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
+  const suggestions = await loadSuggestionsForDiet(diet, forceRefresh);
+
+  return NextResponse.json(
+    { ok: true, diet, suggestions },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=60, stale-while-revalidate=300"
+      }
+    }
+  );
+}
+
+async function loadSuggestionsForDiet(diet: DietType, forceRefresh: boolean) {
+  const now = Date.now();
+  const cached = suggestionCache.get(diet);
+
+  if (!forceRefresh && cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+
+  const promise = buildSuggestionsForDiet(diet).catch((error) => {
+    suggestionCache.delete(diet);
+    throw error;
+  });
+
+  suggestionCache.set(diet, {
+    expiresAt: now + SUGGESTION_CACHE_TTL_MS,
+    promise
+  });
+
+  return promise;
+}
+
+async function buildSuggestionsForDiet(diet: DietType) {
   const compatibleQueries = curatedQueries.filter((entry) => entry.diets.includes(diet)).slice(0, 16);
 
-  const suggestions = await Promise.all(
+  return Promise.all(
     compatibleQueries.map(async (entry) => {
       const product = await pickSuggestionProduct(entry);
       const label = product?.name ?? titleCase(entry.queries[0]);
@@ -73,12 +117,10 @@ export async function GET(req: Request) {
         label,
         reason: entry.reason,
         icon,
-        imageUrl: proxiedOffImageUrl(product?.imageUrl)
+        imageUrl: proxiedOffImageUrl(product?.imageUrl, { proxy: false, size: "200" })
       } satisfies ShoppingSuggestionResponse;
     })
   );
-
-  return NextResponse.json({ ok: true, diet, suggestions });
 }
 
 async function resolveSuggestionDiet(req: Request): Promise<DietType> {
@@ -125,7 +167,7 @@ async function pickSuggestionProduct(entry: CuratedSuggestionEntry) {
   }
 
   for (const query of entry.queries) {
-    const results = await searchOpenFoodFactsProducts(query, 100, { sortBy: "unique_scans_n" }).catch(() => []);
+    const results = await searchOpenFoodFactsProducts(query, 24, { sortBy: "unique_scans_n" }).catch(() => []);
     const candidateWithImage = await findCandidateWithImage(results);
 
     if (candidateWithImage) {
@@ -138,7 +180,7 @@ async function pickSuggestionProduct(entry: CuratedSuggestionEntry) {
   }
 
   for (const query of entry.queries) {
-    const imageResults = await searchOpenFoodFactsProducts(query, 100, { image: true, sortBy: "unique_scans_n" }).catch(() => []);
+    const imageResults = await searchOpenFoodFactsProducts(query, 24, { image: true, sortBy: "unique_scans_n" }).catch(() => []);
     const candidateWithImage = await findCandidateWithImage(imageResults);
 
     if (candidateWithImage) {

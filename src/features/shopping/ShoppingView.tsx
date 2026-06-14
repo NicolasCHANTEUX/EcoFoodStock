@@ -6,11 +6,12 @@ import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { readStoredSettingsProfile, SETTINGS_PROFILE_STORAGE_KEY } from "@/lib/settings-storage";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
-import type { DietType, SettingsProfile } from "@/lib/settings";
+import type { DietType } from "@/lib/settings";
 import type { ShoppingGroup, ShoppingSuggestion } from "@/types/domain";
 
-const SETTINGS_STORAGE_KEY = "ecofoodstock:settings-profile";
+const SETTINGS_STORAGE_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 const SHOPPING_SUGGESTIONS_STORAGE_KEY = "ecofoodstock:shopping-suggestions-hidden";
 const SHOPPING_ITEM_IMAGES_STORAGE_KEY = "ecofoodstock:shopping-item-images";
 const SHOPPING_COMPLETION_DISMISSALS_STORAGE_KEY = "ecofoodstock:shopping-completion-dismissals";
@@ -80,11 +81,21 @@ export function ShoppingView() {
     }
   }, [applyShoppingPayload]);
 
-  const loadSuggestions = useCallback(async () => {
+  const loadSuggestions = useCallback(async (forceRefresh = false) => {
     try {
       setLoadingSuggestions(true);
       const currentDiet = readStoredDiet();
-      const query = currentDiet ? `?diet=${encodeURIComponent(currentDiet)}` : "";
+      const params = new URLSearchParams();
+
+      if (currentDiet) {
+        params.set("diet", currentDiet);
+      }
+
+      if (forceRefresh) {
+        params.set("refresh", "1");
+      }
+
+      const query = params.toString() ? `?${params.toString()}` : "";
 
       const response = await fetch(`/api/shopping/suggestions${query}`, {
         cache: "no-store",
@@ -287,7 +298,7 @@ export function ShoppingView() {
     setLoadingSuggestions(true);
     window.localStorage.removeItem(SHOPPING_SUGGESTIONS_STORAGE_KEY);
     setHiddenSuggestionIds([]);
-    void loadSuggestions();
+    void loadSuggestions(true);
   }
 
   async function completeShopping() {
@@ -610,13 +621,12 @@ function readStoredDiet(): DietType | null {
   }
 
   try {
-    const storedProfile = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    const storedProfile = readStoredSettingsProfile(window.localStorage, [SETTINGS_STORAGE_KEY]);
     if (!storedProfile) {
       return null;
     }
 
-    const parsed = JSON.parse(storedProfile) as Partial<SettingsProfile>;
-    return isDiet(parsed.diet) ? parsed.diet : null;
+    return isDiet(storedProfile.diet) ? storedProfile.diet : null;
   } catch {
     return null;
   }

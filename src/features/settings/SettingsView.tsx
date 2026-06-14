@@ -40,9 +40,16 @@ import {
   getGoalLabel,
   type SettingsProfile
 } from "@/lib/settings";
+import {
+  readStoredSettingsProfile,
+  sanitizeAllStoredSettingsProfiles,
+  sanitizeStoredSettingsProfiles,
+  SETTINGS_PROFILE_STORAGE_KEY,
+  writeStoredSettingsProfile
+} from "@/lib/settings-storage";
 import { applyThemePreference, isThemePreference, THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
 
-const STORAGE_KEY = "ecofoodstock:settings-profile";
+const STORAGE_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 
 type SettingsSection = "household" | "personal" | "history" | "account" | "application";
 type ConfirmState =
@@ -135,11 +142,14 @@ export function SettingsView() {
       setThemePreference(nextThemePreference);
       applyThemePreference(nextThemePreference);
 
-      const storedProfile = readStoredProfile([nextStorageKey, STORAGE_KEY]);
+      sanitizeAllStoredSettingsProfiles(window.localStorage);
+      sanitizeStoredSettingsProfiles(window.localStorage, [nextStorageKey, STORAGE_KEY]);
+      const storedProfile = readStoredSettingsProfile(window.localStorage, [nextStorageKey, STORAGE_KEY]);
 
       if (storedProfile) {
-        setProfile(storedProfile);
-        baselineRef.current = storedProfile;
+        const localProfile = { ...defaultSettingsProfile, ...storedProfile };
+        setProfile(localProfile);
+        baselineRef.current = localProfile;
       }
 
       try {
@@ -152,8 +162,8 @@ export function SettingsView() {
         if (active && settingsResponse.ok && settingsPayload?.profile) {
           setProfile(settingsPayload.profile);
           baselineRef.current = settingsPayload.profile;
-          window.localStorage.setItem(nextStorageKey, JSON.stringify(settingsPayload.profile));
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settingsPayload.profile));
+          writeStoredSettingsProfile(window.localStorage, nextStorageKey, settingsPayload.profile);
+          writeStoredSettingsProfile(window.localStorage, STORAGE_KEY, settingsPayload.profile);
         }
       } catch {
         // Le profil local reste utilisable si la connexion est temporairement indisponible.
@@ -233,8 +243,8 @@ export function SettingsView() {
 
   function persistProfileLocally(nextProfile: SettingsProfile, forcedStorageKey?: string) {
     const nextStorageKey = forcedStorageKey ?? storageKey ?? STORAGE_KEY;
-    window.localStorage.setItem(nextStorageKey, JSON.stringify(nextProfile));
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextProfile));
+    writeStoredSettingsProfile(window.localStorage, nextStorageKey, nextProfile);
+    writeStoredSettingsProfile(window.localStorage, STORAGE_KEY, nextProfile);
   }
 
   function openSection(section: SettingsSection) {
@@ -1104,24 +1114,6 @@ function clearEcoFoodStockStorage(storage: Storage) {
   }
 
   keysToDelete.forEach((key) => storage.removeItem(key));
-}
-
-function readStoredProfile(keys: string[]) {
-  for (const key of keys) {
-    const stored = window.localStorage.getItem(key);
-
-    if (!stored) {
-      continue;
-    }
-
-    try {
-      return JSON.parse(stored) as SettingsProfile;
-    } catch {
-      // Ignore stale local settings and keep looking for a usable fallback.
-    }
-  }
-
-  return null;
 }
 
 function formatSettingsSaveError(payload: { message?: string; error?: string } | null, status: number) {

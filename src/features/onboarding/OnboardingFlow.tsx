@@ -10,6 +10,7 @@ import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
 import { clearBrowserAccountStatusCache } from "@/lib/supabase/browser-account";
 import { buildAccountStorageKey } from "@/lib/account-storage";
 import { defaultSettingsProfile, getGoalDefaultAdjustment, type DietType, type SettingsProfile } from "@/lib/settings";
+import { SETTINGS_PROFILE_STORAGE_KEY, toLocalSettingsProfile, writeStoredSettingsProfile } from "@/lib/settings-storage";
 import { t } from "@/lib/i18n";
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5;
@@ -23,7 +24,7 @@ type OnboardingState = SettingsProfile & {
 };
 
 const STORAGE_KEY = "ecofoodstock:onboarding-state";
-const SETTINGS_KEY = "ecofoodstock:settings-profile";
+const SETTINGS_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 
 const notificationItems: Array<{
   key: keyof OnboardingState["notifications"];
@@ -68,6 +69,16 @@ export function OnboardingFlow() {
             ...(parsed.notifications ?? {})
           }
         }));
+        window.localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            ...toLocalSettingsProfile(parsed),
+            notifications: {
+              ...defaultOnboardingState.notifications,
+              ...(parsed.notifications ?? {})
+            }
+          })
+        );
       }
     } catch {
       setState(defaultOnboardingState);
@@ -113,7 +124,13 @@ export function OnboardingFlow() {
   }, [inviteToken, router]);
 
   function persist(nextState: OnboardingState) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...toLocalSettingsProfile(nextState),
+        notifications: nextState.notifications
+      })
+    );
   }
 
   function updateState<K extends keyof OnboardingState>(key: K, value: OnboardingState[K]) {
@@ -166,8 +183,8 @@ export function OnboardingFlow() {
       const { data } = await supabase.auth.getUser();
       const userSettingsKey = buildAccountStorageKey(SETTINGS_KEY, data.user?.id ?? null);
 
-      window.localStorage.setItem(userSettingsKey, JSON.stringify(nextState));
-      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(nextState));
+      writeStoredSettingsProfile(window.localStorage, userSettingsKey, nextState);
+      writeStoredSettingsProfile(window.localStorage, SETTINGS_KEY, nextState);
       window.localStorage.setItem("ecofoodstock:onboarding-completed", "true");
       window.localStorage.removeItem(STORAGE_KEY);
       clearBrowserAccountStatusCache();

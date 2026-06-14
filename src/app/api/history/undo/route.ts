@@ -48,6 +48,14 @@ export async function POST(req: Request) {
   const metadata = (evRow.metadata ?? {}) as Record<string, unknown>;
   const isSettingsUndo = metadata.section === "settings";
 
+  if (!isSettingsUndo) {
+    const rpcUndo = await tryUndoWithRpc(supabase, eventId, context.appUserId);
+
+    if (rpcUndo.handled) {
+      return rpcUndo.response;
+    }
+  }
+
   // find related inventory movements (not required for settings events)
   const { data: movements, error: mvErr } = await supabase.from("inventory_movements").select("*").eq("activity_event_id", eventId);
 
@@ -260,4 +268,39 @@ export async function POST(req: Request) {
     movements: createdUndoMovements,
     restoredSettingsProfile
   });
+}
+
+async function tryUndoWithRpc(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  eventId: string,
+  userId: string
+) {
+  const { data, error } = await supabase.rpc("undo_activity_event", {
+    p_event_id: eventId,
+    p_user_id: userId
+  });
+
+  if (error) {
+    if (isMissingRpcError(error.message, error.code)) {
+      return { handled: false as const };
+    }
+
+    return {
+      handled: true as const,
+      response: NextResponse.json(
+        { ok: false, message: "Undo failed in database transaction", error: error.message },
+        { status: 500 }
+      )
+    };
+  }
+
+  return {
+    handled: true as const,
+    response: NextResponse.json(data ?? { ok: true })
+  };
+}
+
+function isMissingRpcError(message?: string, code?: string) {
+  const normalizedMessage = message?.toLowerCase() ?? "";
+  return code === "PGRST202" || normalizedMessage.includes("could not find the function");
 }

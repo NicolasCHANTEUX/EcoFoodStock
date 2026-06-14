@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildActivityEventInsert } from "@/lib/activity-events";
+import { planInventoryBatchConsumption } from "@/lib/inventory-actions";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeQuantityUnit } from "@/lib/units";
@@ -36,6 +37,16 @@ type RollbackBatchState = {
   quantity_remaining: number;
   status: string;
 };
+
+type InventoryActionRpcBody = {
+  ok?: boolean;
+  status?: number;
+  [key: string]: unknown;
+};
+
+type InventoryActionRpcResult =
+  | { available: true; body: InventoryActionRpcBody }
+  | { available: false };
 
 const quantityUnitSchema = z.preprocess(
   (value) => {
@@ -81,6 +92,21 @@ export async function POST(req: Request) {
 
   const { context, householdId, supabase } = access;
   const productId = extractProductId(payload.productId);
+  const rpcResult = await tryApplyInventoryActionWithRpc(supabase, {
+    householdId,
+    userId: context.appUserId,
+    productId,
+    action: payload.action,
+    quantity: payload.quantity,
+    storageArea: payload.storageArea,
+    unit: payload.unit
+  });
+
+  if (rpcResult.available) {
+    const status = typeof rpcResult.body.status === "number" ? rpcResult.body.status : rpcResult.body.ok ? 200 : 500;
+    return NextResponse.json(rpcResult.body, { status });
+  }
+
   const batches = await loadMatchingBatches(supabase, {
     householdId,
     productId,
@@ -95,14 +121,14 @@ export async function POST(req: Request) {
     );
   }
 
-  const totalAvailable = batches.rows.reduce((sum, batch) => sum + Number(batch.quantity_remaining), 0);
+  const consumptionPlan = planInventoryBatchConsumption(batches.rows, payload.quantity);
 
-  if (payload.quantity > totalAvailable) {
+  if (consumptionPlan.remainingQuantity > 0) {
     return NextResponse.json(
       {
         ok: false,
         message: "Requested quantity is greater than available stock",
-        availableQuantity: totalAvailable
+        availableQuantity: consumptionPlan.totalAvailable
       },
       { status: 409 }
     );
@@ -156,21 +182,12 @@ export async function POST(req: Request) {
   const insertedMovementIds: string[] = [];
   const updatedBatches: ActiveBatchRow[] = [];
   const movements: unknown[] = [];
-  let remainingToApply = payload.quantity;
 
-  for (const batch of batches.rows) {
-    if (remainingToApply <= 0) {
-      break;
-    }
-
-    const batchQuantity = Number(batch.quantity_remaining);
-    const appliedQuantity = Math.min(remainingToApply, batchQuantity);
-
-    if (appliedQuantity <= 0) {
-      continue;
-    }
-
-    const nextRemaining = roundQuantity(batchQuantity - appliedQuantity);
+  for (const step of consumptionPlan.steps) {
+    const batch = step.batch;
+    const batchQuantity = step.quantityBefore;
+    const appliedQuantity = step.appliedQuantity;
+    const nextRemaining = step.quantityAfter;
     const updatePayload: Record<string, unknown> = {
       quantity_remaining: nextRemaining
     };
@@ -246,13 +263,12 @@ export async function POST(req: Request) {
 
     insertedMovementIds.push(movement.id);
     movements.push(movement);
-    remainingToApply = roundQuantity(remainingToApply - appliedQuantity);
   }
 
-  if (remainingToApply > 0) {
+  if (consumptionPlan.remainingQuantity > 0) {
     const rollbackErrors = await rollbackInventoryAction(supabase, rollbackBatchStates, insertedMovementIds, activityEvent.id);
     return NextResponse.json(
-      { ok: false, message: "Unable to apply the full quantity", remainingQuantity: remainingToApply, rollbackErrors },
+      { ok: false, message: "Unable to apply the full quantity", remainingQuantity: consumptionPlan.remainingQuantity, rollbackErrors },
       { status: 500 }
     );
   }
@@ -264,6 +280,44 @@ export async function POST(req: Request) {
     appliedQuantity: payload.quantity,
     activityEventId: activityEvent.id
   });
+}
+
+async function tryApplyInventoryActionWithRpc(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  payload: {
+    householdId: string;
+    userId?: string | null;
+    productId: string;
+    action: InventoryAction;
+    quantity: number;
+    storageArea?: string;
+    unit?: string;
+  }
+): Promise<InventoryActionRpcResult> {
+  const { data, error } = await supabase.rpc("apply_inventory_action", {
+    p_household_id: payload.householdId,
+    p_user_id: payload.userId ?? null,
+    p_product_id: payload.productId,
+    p_action: payload.action,
+    p_quantity: payload.quantity,
+    p_storage_area: payload.storageArea ?? null,
+    p_unit: payload.unit ?? null
+  });
+
+  if (error) {
+    if (!isMissingRpcError(error.message)) {
+      console.warn("apply_inventory_action rpc failed, falling back to application flow", error.message);
+    }
+
+    return { available: false };
+  }
+
+  if (!isRecord(data)) {
+    console.warn("apply_inventory_action rpc returned an unexpected payload, falling back to application flow", data);
+    return { available: false };
+  }
+
+  return { available: true, body: data };
 }
 
 async function updateInventoryBatchQuantity(
@@ -387,6 +441,19 @@ function isSchemaValueError(message?: string) {
   );
 }
 
+function isMissingRpcError(message?: string) {
+  const normalizedMessage = message?.toLowerCase() ?? "";
+  return (
+    normalizedMessage.includes("could not find the function") ||
+    normalizedMessage.includes("schema cache") ||
+    normalizedMessage.includes("apply_inventory_action")
+  );
+}
+
+function isRecord(value: unknown): value is InventoryActionRpcBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function rollbackInventoryAction(
   supabase: ReturnType<typeof createSupabaseServerClient>,
   batchStates: RollbackBatchState[],
@@ -462,8 +529,4 @@ function getActionText(action: InventoryAction) {
     descriptionSuffix: "retiré du stock",
     reason: "Sortie du stock (consommé)"
   };
-}
-
-function roundQuantity(value: number) {
-  return Math.round(value * 1000) / 1000;
 }

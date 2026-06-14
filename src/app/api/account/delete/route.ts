@@ -17,7 +17,11 @@ export async function DELETE(request: Request) {
 
   try {
     if (context.appUserId) {
-      await deleteApplicationAccount(supabase, context.appUserId);
+      const rpcDeleted = await tryDeleteApplicationAccountWithRpc(supabase, context.appUserId);
+
+      if (!rpcDeleted) {
+        await deleteApplicationAccount(supabase, context.appUserId);
+      }
     }
 
     const { error: authDeleteError } = await supabase.auth.admin.deleteUser(context.authUserId!);
@@ -38,6 +42,22 @@ export async function DELETE(request: Request) {
       { status: 500 }
     );
   }
+}
+
+async function tryDeleteApplicationAccountWithRpc(supabase: SupabaseClient, appUserId: string) {
+  const { error } = await supabase.rpc("delete_application_account_data", {
+    p_user_id: appUserId
+  });
+
+  if (!error) {
+    return true;
+  }
+
+  if (!isMissingRpcError(error.message)) {
+    console.warn("delete_application_account_data rpc failed, falling back to application flow", error.message);
+  }
+
+  return false;
 }
 
 async function deleteApplicationAccount(supabase: SupabaseClient, appUserId: string) {
@@ -117,4 +137,13 @@ async function deleteInvitationTokensIfAvailable(supabase: SupabaseClient, house
 function isMissingRelationError(message: string) {
   const lowerMessage = message.toLowerCase();
   return lowerMessage.includes("relation") && lowerMessage.includes("does not exist");
+}
+
+function isMissingRpcError(message?: string) {
+  const normalizedMessage = message?.toLowerCase() ?? "";
+  return (
+    normalizedMessage.includes("could not find the function") ||
+    normalizedMessage.includes("schema cache") ||
+    normalizedMessage.includes("delete_application_account_data")
+  );
 }

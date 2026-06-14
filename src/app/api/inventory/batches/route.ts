@@ -30,6 +30,16 @@ const createBatchSchema = z.object({
   notes: z.string().trim().nullable().optional()
 });
 
+type CreateInventoryBatchRpcBody = {
+  ok?: boolean;
+  status?: number;
+  [key: string]: unknown;
+};
+
+type CreateInventoryBatchRpcResult =
+  | { available: true; body: CreateInventoryBatchRpcBody }
+  | { available: false };
+
 export async function POST(req: Request) {
   const rawPayload = await req.json().catch(() => null);
   const parsedPayload = createBatchSchema.safeParse(rawPayload);
@@ -58,6 +68,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "Could not determine product id" }, { status: 500 });
   }
 
+  const source = payload.product.barcode ? "scan" : "manual";
+  const rpcResult = await tryCreateInventoryBatchWithRpc(supabase, {
+    householdId,
+    userId: context.appUserId,
+    productId,
+    productName: payload.product.name,
+    quantity: payload.quantity,
+    unit: payload.unit,
+    storageArea: payload.storageArea,
+    expirationDate: payload.expirationDate || null,
+    notes: payload.notes ?? null,
+    source
+  });
+
+  if (rpcResult.available) {
+    const status = typeof rpcResult.body.status === "number" ? rpcResult.body.status : rpcResult.body.ok ? 200 : 500;
+    return NextResponse.json(rpcResult.body, { status });
+  }
+
   const batchInsert = {
     household_id: householdId,
     product_id: productId,
@@ -68,7 +97,7 @@ export async function POST(req: Request) {
     expiration_date: payload.expirationDate || null,
     added_by: context.appUserId ?? null,
     notes: payload.notes ?? null,
-    source: payload.product.barcode ? "scan" : "manual"
+    source
   };
 
   const { data: batch, error: batchError } = await supabase
@@ -89,11 +118,11 @@ export async function POST(req: Request) {
         user_id: context.appUserId ?? null,
         type: "product_added",
         title: `+${payload.quantity} ${payload.product.name} ajouté au stock`,
-        description: `${payload.quantity} ${payload.unit} - ajout ${payload.product.barcode ? "via scan" : "manuel"}`,
+        description: `${payload.quantity} ${payload.unit} - ajout ${source === "scan" ? "via scan" : "manuel"}`,
         product_id: productId,
         can_undo: true,
         metadata: {
-          source: payload.product.barcode ? "scan" : "manual",
+          source,
           inventory_batch_id: batch.id
         }
       })
@@ -119,9 +148,9 @@ export async function POST(req: Request) {
       type: "add",
       quantity_delta: payload.quantity,
       unit: payload.unit,
-      reason: payload.product.barcode ? "Ajout depuis scan" : "Ajout manuel",
+      reason: source === "scan" ? "Ajout depuis scan" : "Ajout manuel",
       activity_event_id: activityEvent.id,
-      metadata: { source: payload.product.barcode ? "scan" : "manual", activity_event_id: activityEvent.id }
+      metadata: { source, activity_event_id: activityEvent.id }
     })
     .select()
     .maybeSingle();
@@ -141,6 +170,50 @@ export async function POST(req: Request) {
     product: { id: productId, name: payload.product.name },
     activityEventId: activityEvent.id
   });
+}
+
+async function tryCreateInventoryBatchWithRpc(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  payload: {
+    householdId: string;
+    userId?: string | null;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unit: string;
+    storageArea: string;
+    expirationDate?: string | null;
+    notes?: string | null;
+    source: string;
+  }
+): Promise<CreateInventoryBatchRpcResult> {
+  const { data, error } = await supabase.rpc("create_inventory_batch_with_activity", {
+    p_household_id: payload.householdId,
+    p_user_id: payload.userId ?? null,
+    p_product_id: payload.productId,
+    p_product_name: payload.productName,
+    p_quantity: payload.quantity,
+    p_unit: payload.unit,
+    p_storage_area: payload.storageArea,
+    p_expiration_date: payload.expirationDate ?? null,
+    p_notes: payload.notes ?? null,
+    p_source: payload.source
+  });
+
+  if (error) {
+    if (!isMissingCreateBatchRpcError(error.message)) {
+      console.warn("create_inventory_batch_with_activity rpc failed, falling back to application flow", error.message);
+    }
+
+    return { available: false };
+  }
+
+  if (!isRecord(data)) {
+    console.warn("create_inventory_batch_with_activity rpc returned an unexpected payload, falling back to application flow", data);
+    return { available: false };
+  }
+
+  return { available: true, body: data };
 }
 
 async function resolveProductId(
@@ -198,4 +271,17 @@ async function rollbackCreatedBatch(
   }
 
   return errors;
+}
+
+function isMissingCreateBatchRpcError(message?: string) {
+  const normalizedMessage = message?.toLowerCase() ?? "";
+  return (
+    normalizedMessage.includes("could not find the function") ||
+    normalizedMessage.includes("schema cache") ||
+    normalizedMessage.includes("create_inventory_batch_with_activity")
+  );
+}
+
+function isRecord(value: unknown): value is CreateInventoryBatchRpcBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
