@@ -85,3 +85,5 @@ Cette checklist sert de passe finale avant de considérer le MVP1 comme validé.
 - [ ] Lancer `npm test`.
 - [ ] Lancer `npm run build`.
 - [ ] Appliquer les scripts SQL nécessaires dans Supabase.
+- [ ] Appliquer `sql/enable-rls-policies.sql` dans Supabase.
+- [ ] Vérifier après RLS : connexion, inventaire, courses, historique, paramètres.
