@@ -42,6 +42,23 @@ begin
     return jsonb_build_object('ok', false, 'status', 400, 'message', 'Quantity must be positive');
   end if;
 
+  if coalesce(auth.role(), '') <> 'service_role' then
+    if auth.uid() is null or p_user_id is null then
+      raise exception 'Authentication required';
+    end if;
+
+    if not exists (
+      select 1
+      from users u
+      join household_members hm on hm.user_id = u.id
+      where u.id = p_user_id
+        and u.auth_user_id = auth.uid()
+        and hm.household_id = p_household_id
+    ) then
+      raise exception 'Forbidden household access';
+    end if;
+  end if;
+
   select coalesce(sum(quantity_remaining), 0)
   into v_total_available
   from (
@@ -190,3 +207,8 @@ begin
   );
 end;
 $$;
+
+revoke execute on function public.apply_inventory_action(uuid, uuid, uuid, text, numeric, text, text)
+  from PUBLIC, anon, authenticated;
+grant execute on function public.apply_inventory_action(uuid, uuid, uuid, text, numeric, text, text)
+  to service_role;

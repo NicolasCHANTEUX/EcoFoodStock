@@ -81,8 +81,7 @@ export async function POST(req: Request) {
 
   const payload = parsedPayload.data;
   const access = await requireHouseholdAccess(req, {
-    allowDemo: true,
-    requireAuth: false,
+    requireAuth: true,
     requestedHouseholdId: payload.householdId
   });
 

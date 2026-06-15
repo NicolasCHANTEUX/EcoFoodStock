@@ -25,6 +25,8 @@ type OnboardingState = SettingsProfile & {
 
 const STORAGE_KEY = "ecofoodstock:onboarding-state";
 const SETTINGS_KEY = SETTINGS_PROFILE_STORAGE_KEY;
+const choiceActiveClass = "settings-choice-active";
+const choiceInactiveClass = "settings-choice-inactive";
 
 const notificationItems: Array<{
   key: keyof OnboardingState["notifications"];
@@ -267,9 +269,8 @@ export function OnboardingFlow() {
                 {[1, 2, 3, 4, 5].map((size) => (
                   <button
                     key={size}
-                    className={`rounded-xl border px-4 py-5 text-center transition ${
-                      state.householdSize === size ? "border-brand-600 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-500"
-                    }`}
+                    className={getChoiceClass(state.householdSize === size, "rounded-xl border px-4 py-5 text-center transition")}
+                    aria-pressed={state.householdSize === size}
                     type="button"
                     onClick={() => updateState("householdSize", size)}
                   >
@@ -297,9 +298,8 @@ export function OnboardingFlow() {
                 ].map((diet) => (
                   <button
                     key={diet.value}
-                    className={`rounded-2xl border px-4 py-8 transition ${
-                      state.diet === diet.value ? "border-brand-600 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-500"
-                    }`}
+                    className={getChoiceClass(state.diet === diet.value, "rounded-2xl border px-4 py-8 transition")}
+                    aria-pressed={state.diet === diet.value}
                     type="button"
                     onClick={() => updateState("diet", diet.value)}
                   >
@@ -339,9 +339,8 @@ export function OnboardingFlow() {
                 ].map((mode) => (
                   <button
                     key={mode.value}
-                    className={`rounded-2xl border p-5 text-left transition ${
-                      state.appMode === mode.value ? "border-brand-600 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-500"
-                    }`}
+                    className={getChoiceClass(state.appMode === mode.value, "rounded-2xl border p-5 text-left transition")}
+                    aria-pressed={state.appMode === mode.value}
                     type="button"
                     onClick={() => updateState("appMode", mode.value)}
                   >
@@ -371,9 +370,8 @@ export function OnboardingFlow() {
                 ].map((sex) => (
                   <button
                     key={sex.value}
-                    className={`rounded-xl border px-4 py-4 text-center transition ${
-                      state.sex === sex.value ? "border-brand-600 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-500"
-                    }`}
+                    className={getChoiceClass(state.sex === sex.value, "rounded-xl border px-4 py-4 text-center transition")}
+                    aria-pressed={state.sex === sex.value}
                     type="button"
                     onClick={() => updateState("sex", sex.value)}
                   >
@@ -437,7 +435,10 @@ export function OnboardingFlow() {
                     key={item.key}
                     type="button"
                     onClick={() => toggleNotification(item.key)}
-                    className="flex w-full items-start gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-white"
+                    className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                      state.notifications[item.key] ? choiceActiveClass : choiceInactiveClass
+                    }`}
+                    aria-pressed={state.notifications[item.key]}
                   >
                     <span className={`mt-1 flex h-6 w-6 items-center justify-center rounded-full ${state.notifications[item.key] ? "bg-emerald-500 text-white" : "bg-slate-300 text-white"}`}>
                       <CircleCheck className="h-4 w-4" />
@@ -472,5 +473,9 @@ export function OnboardingFlow() {
       </div>
     </main>
   );
+}
+
+function getChoiceClass(active: boolean, baseClassName: string) {
+  return `${baseClassName} ${active ? choiceActiveClass : choiceInactiveClass}`;
 }
 

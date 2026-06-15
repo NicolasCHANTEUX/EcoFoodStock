@@ -10,12 +10,31 @@ export type AccountContext = {
   onboardingCompleted?: boolean;
 };
 
+type AuthUserMetadata = {
+  display_name?: unknown;
+  full_name?: unknown;
+  fullName?: unknown;
+  name?: unknown;
+  preferred_name?: unknown;
+  legal_terms_accepted_at?: unknown;
+  legal_terms_version?: unknown;
+  privacy_policy_version?: unknown;
+};
+
 export function isProductionEnvironment() {
-  return process.env.NODE_ENV === "production";
+  return process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
 }
 
 export function canUseDemoMode() {
-  return !isProductionEnvironment();
+  return (
+    process.env.NODE_ENV === "development" &&
+    process.env.VERCEL_ENV !== "production" &&
+    isEnabled(process.env.ECOFOODSTOCK_ENABLE_DEMO_MODE)
+  );
+}
+
+function isEnabled(value: string | undefined) {
+  return ["1", "true", "yes", "on"].includes(value?.trim().toLowerCase() ?? "");
 }
 
 export async function userBelongsToHousehold(
@@ -54,8 +73,8 @@ export async function resolveAccountContext(request: Request, supabase: Supabase
   }
 
   const authUserEmail = userData.user?.email ?? `${authUserId}@missing.local`;
-  const metadata = userData.user?.user_metadata as { full_name?: string; name?: string } | undefined;
-  const metadataDisplayName = metadata?.full_name ?? metadata?.name ?? null;
+  const metadata = userData.user?.user_metadata as AuthUserMetadata | undefined;
+  const metadataDisplayName = getMetadataDisplayName(metadata, authUserEmail);
 
   const { data: existingUser } = await supabase
     .from("users")
@@ -65,25 +84,34 @@ export async function resolveAccountContext(request: Request, supabase: Supabase
 
   let appUserId = existingUser?.id;
   let email = existingUser?.email ?? authUserEmail;
-  let displayName = existingUser?.display_name ?? metadataDisplayName;
+  let displayName = getValidDisplayName(existingUser?.display_name, email) ?? metadataDisplayName;
   let onboardingCompleted = existingUser?.onboarding_completed ?? false;
 
   if (!appUserId) {
-    const { data: createdUser } = await supabase
+    let createUserResult = await supabase
       .from("users")
-      .insert({
-        auth_user_id: authUserId,
-        email: authUserEmail,
-        display_name: displayName
-      })
+      .insert(buildAppUserInsert(authUserId, authUserEmail, displayName, metadata))
       .select("id, email, display_name, onboarding_completed")
       .maybeSingle<{ id: string; email: string | null; display_name: string | null; onboarding_completed: boolean }>();
 
+    if (createUserResult.error && isMissingLegalConsentColumn(createUserResult.error.message)) {
+      createUserResult = await supabase
+        .from("users")
+        .insert({
+          auth_user_id: authUserId,
+          email: authUserEmail,
+          display_name: displayName
+        })
+        .select("id, email, display_name, onboarding_completed")
+        .maybeSingle<{ id: string; email: string | null; display_name: string | null; onboarding_completed: boolean }>();
+    }
+
+    const { data: createdUser } = createUserResult;
     appUserId = createdUser?.id;
     email = createdUser?.email ?? authUserEmail;
-    displayName = createdUser?.display_name ?? displayName;
+    displayName = getValidDisplayName(createdUser?.display_name, email) ?? displayName;
     onboardingCompleted = createdUser?.onboarding_completed ?? false;
-  } else if (!existingUser?.display_name && metadataDisplayName) {
+  } else if (!getValidDisplayName(existingUser?.display_name, email) && metadataDisplayName) {
     await supabase.from("users").update({ display_name: metadataDisplayName }).eq("id", appUserId);
     displayName = metadataDisplayName;
   }
@@ -156,4 +184,88 @@ export async function ensureUserHousehold(supabase: SupabaseClient, context: Acc
   }
 
   return household.id;
+}
+
+function buildAppUserInsert(
+  authUserId: string,
+  authUserEmail: string,
+  displayName: string | null | undefined,
+  metadata: AuthUserMetadata | undefined
+) {
+  const insertPayload: Record<string, string | null> = {
+    auth_user_id: authUserId,
+    email: authUserEmail,
+    display_name: displayName ?? null
+  };
+  const legalTermsAcceptedAt = normalizeIsoDate(getStringMetadata(metadata?.legal_terms_accepted_at));
+  const legalTermsVersion = getStringMetadata(metadata?.legal_terms_version);
+  const privacyPolicyVersion = getStringMetadata(metadata?.privacy_policy_version);
+
+  if (legalTermsAcceptedAt) {
+    insertPayload.legal_terms_accepted_at = legalTermsAcceptedAt;
+  }
+
+  if (legalTermsVersion) {
+    insertPayload.legal_terms_version = legalTermsVersion;
+  }
+
+  if (privacyPolicyVersion) {
+    insertPayload.privacy_policy_version = privacyPolicyVersion;
+  }
+
+  return insertPayload;
+}
+
+function getStringMetadata(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function getValidDisplayName(value: string | null | undefined, email: string | null | undefined) {
+  const displayName = value?.trim();
+  const normalizedEmail = email?.trim().toLowerCase();
+
+  if (!displayName || (normalizedEmail && displayName.toLowerCase() === normalizedEmail)) {
+    return null;
+  }
+
+  return displayName;
+}
+
+function getMetadataDisplayName(metadata: AuthUserMetadata | undefined, email: string) {
+  const candidates = [
+    metadata?.full_name,
+    metadata?.display_name,
+    metadata?.fullName,
+    metadata?.name,
+    metadata?.preferred_name
+  ];
+  const normalizedEmail = email.trim().toLowerCase();
+
+  for (const candidate of candidates) {
+    const value = getStringMetadata(candidate);
+
+    if (value && value.toLowerCase() !== normalizedEmail) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function normalizeIsoDate(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined;
+}
+
+function isMissingLegalConsentColumn(message: string) {
+  const lowerMessage = message.toLowerCase();
+  return (
+    lowerMessage.includes("legal_terms_accepted_at") ||
+    lowerMessage.includes("legal_terms_version") ||
+    lowerMessage.includes("privacy_policy_version")
+  );
 }

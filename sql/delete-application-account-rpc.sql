@@ -11,6 +11,21 @@ declare
   v_household_ids uuid[];
   v_households_to_delete uuid[];
 begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    if auth.uid() is null or p_user_id is null then
+      raise exception 'Authentication required';
+    end if;
+
+    if not exists (
+      select 1
+      from users u
+      where u.id = p_user_id
+        and u.auth_user_id = auth.uid()
+    ) then
+      raise exception 'Forbidden account access';
+    end if;
+  end if;
+
   select coalesce(array_agg(distinct household_id), '{}')
   into v_household_ids
   from household_members
@@ -54,3 +69,8 @@ begin
   );
 end;
 $$;
+
+revoke execute on function public.delete_application_account_data(uuid)
+  from PUBLIC, anon, authenticated;
+grant execute on function public.delete_application_account_data(uuid)
+  to service_role;

@@ -29,6 +29,23 @@ begin
     raise exception 'Event not found';
   end if;
 
+  if coalesce(auth.role(), '') <> 'service_role' then
+    if auth.uid() is null or p_user_id is null then
+      raise exception 'Authentication required';
+    end if;
+
+    if not exists (
+      select 1
+      from users u
+      join household_members hm on hm.user_id = u.id
+      where u.id = p_user_id
+        and u.auth_user_id = auth.uid()
+        and hm.household_id = v_event.household_id
+    ) then
+      raise exception 'Forbidden household access';
+    end if;
+  end if;
+
   if not v_event.can_undo then
     raise exception 'Event cannot be undone';
   end if;
@@ -170,3 +187,8 @@ begin
   );
 end;
 $$;
+
+revoke execute on function public.undo_activity_event(uuid, uuid)
+  from PUBLIC, anon, authenticated;
+grant execute on function public.undo_activity_event(uuid, uuid)
+  to service_role;

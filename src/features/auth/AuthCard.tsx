@@ -13,6 +13,12 @@ const LEGAL_TERMS_VERSION = "2026-06-07";
 const PRIVACY_POLICY_VERSION = "2026-06-07";
 const PENDING_LEGAL_CONSENT_KEY = "ecofoodstock:pending-legal-consent";
 
+type SignupResponse = {
+  error?: string;
+  message?: string;
+  needsEmailConfirmation?: boolean;
+};
+
 export function AuthCard() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -200,8 +206,10 @@ export function AuthCard() {
     setLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanFullName = normalizeDisplayName(fullName);
 
-    if (isSignUp && !fullName.trim()) {
+    if (isSignUp && !cleanFullName) {
       setErrorMessage("Nom et prénom requis.");
       setLoading(false);
       return;
@@ -213,8 +221,14 @@ export function AuthCard() {
       return;
     }
 
-    if (!email || !password) {
+    if (!cleanEmail || !password) {
       setErrorMessage("Email et mot de passe requis.");
+      setLoading(false);
+      return;
+    }
+
+    if (isSignUp && !isStrongEnoughPassword(password)) {
+      setErrorMessage("Le mot de passe doit contenir au moins 8 caracteres, une lettre et un chiffre.");
       setLoading(false);
       return;
     }
@@ -227,25 +241,35 @@ export function AuthCard() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email,
+            email: cleanEmail,
             password,
             inviteToken,
-            full_name: fullName.trim(),
+            full_name: cleanFullName,
             acceptedLegalTerms,
             legalTermsVersion: LEGAL_TERMS_VERSION,
             privacyPolicyVersion: PRIVACY_POLICY_VERSION
           })
         });
+        const signupBody = (await res.json().catch(() => null)) as SignupResponse | null;
 
         if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.error ?? "La création du compte a échoué.");
+          throw new Error(signupBody?.error ?? "La creation du compte a echoue.");
         }
 
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signupBody?.needsEmailConfirmation) {
+          setSuccessMessage(signupBody.message ?? "Compte cree. Consultez votre email pour confirmer l'inscription.");
+          setIsSignUp(false);
+          setPassword("");
+          return;
+        }
+
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (signInError) {
           if (signInError.message.toLowerCase().includes("email not confirmed")) {
-            throw new Error("Votre compte a été créé, mais l'email doit être confirmé dans Supabase. Activez l'autoconfirmation ou confirmez ce compte dans le dashboard.");
+            setSuccessMessage("Compte cree. Consultez votre email pour confirmer l'inscription.");
+            setIsSignUp(false);
+            setPassword("");
+            return;
           }
 
           throw signInError;
@@ -256,7 +280,7 @@ export function AuthCard() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (error) throw error;
 
       setSuccessMessage("Connexion réussie. Redirection...");
@@ -341,12 +365,16 @@ export function AuthCard() {
             </div>
 
             <div className="mt-4">
-              <LegalConsentCheckbox accepted={acceptedLegalTerms} onChange={setAcceptedLegalTerms} />
+              <LegalConsentCheckbox
+                accepted={acceptedLegalTerms}
+                mode={isSignUp ? "signup" : "oauth"}
+                onChange={setAcceptedLegalTerms}
+              />
             </div>
 
             <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
               <span className="h-px flex-1 bg-slate-200" />
-              ou
+              {isSignUp ? "ou creer un compte par email" : "ou se connecter par email"}
               <span className="h-px flex-1 bg-slate-200" />
             </div>
 
@@ -402,9 +430,11 @@ export function AuthCard() {
 
 function LegalConsentCheckbox({
   accepted,
+  mode,
   onChange
 }: {
   accepted: boolean;
+  mode: "oauth" | "signup";
   onChange: (accepted: boolean) => void;
 }) {
   return (
@@ -424,7 +454,9 @@ function LegalConsentCheckbox({
         <a className="font-semibold text-brand-700 underline-offset-2 hover:underline" href="/legal/privacy" target="_blank" rel="noreferrer">
           politique de confidentialité
         </a>
-        . Cette acceptation est nécessaire pour créer un compte ou continuer avec Google/Apple.
+        {mode === "signup"
+          ? ". Cette acceptation est necessaire pour creer un compte ou continuer avec Google/Apple."
+          : ". Cette acceptation est necessaire uniquement pour continuer avec Google/Apple."}
       </span>
     </label>
   );
@@ -478,4 +510,12 @@ function getSafeRedirectTarget(value: string | null) {
   }
 
   return value;
+}
+
+function normalizeDisplayName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function isStrongEnoughPassword(value: string) {
+  return value.length >= 8 && /[A-Za-z]/.test(value) && /\d/.test(value);
 }

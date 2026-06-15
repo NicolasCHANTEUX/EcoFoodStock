@@ -39,6 +39,8 @@ type SettingsHistoryPayload = {
   changes: string;
 };
 
+const GOAL_ADJUSTMENT_INFERENCE_THRESHOLD = 100;
+
 const settingsProfileSchema = z.object({
   householdSize: z.coerce.number().optional(),
   diet: z.enum(["omnivore", "vegetarian", "vegan", "pescatarian"]).optional(),
@@ -249,13 +251,17 @@ async function loadSettingsProfile(supabase: ReturnType<typeof createSupabaseSer
     const maintenanceCalories = calculateMaintenanceCalories(profile);
 
     if (maintenanceCalories !== null) {
-      profile.dailyCaloriesAdjustment = Math.round(goal.calories_kcal - maintenanceCalories);
-      if (profile.dailyCaloriesAdjustment > 0) {
-        profile.goal = "mass_gain";
-      } else if (profile.dailyCaloriesAdjustment < 0) {
-        profile.goal = "cut";
-      } else {
+      const inferredAdjustment = Math.round(goal.calories_kcal - maintenanceCalories);
+
+      if (Math.abs(inferredAdjustment) < GOAL_ADJUSTMENT_INFERENCE_THRESHOLD) {
+        profile.dailyCaloriesAdjustment = 0;
         profile.goal = "maintenance";
+      } else if (inferredAdjustment > 0) {
+        profile.dailyCaloriesAdjustment = inferredAdjustment;
+        profile.goal = "mass_gain";
+      } else {
+        profile.dailyCaloriesAdjustment = inferredAdjustment;
+        profile.goal = "cut";
       }
     }
   }

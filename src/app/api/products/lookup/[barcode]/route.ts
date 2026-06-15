@@ -21,7 +21,12 @@ type CatalogProductRow = {
 };
 
 export async function GET(req: Request, { params }: RouteContext) {
-  const { barcode } = await params;
+  const { barcode: rawBarcode } = await params;
+  const barcode = rawBarcode.trim();
+
+  if (!isSupportedBarcode(barcode)) {
+    return NextResponse.json({ ok: false, message: "Invalid barcode" }, { status: 400 });
+  }
 
   const supabase = (() => {
     try {
@@ -126,4 +131,8 @@ export async function GET(req: Request, { params }: RouteContext) {
       imageUrl: proxiedOffImageUrl(product.imageUrl)
     }
   });
+}
+
+function isSupportedBarcode(value: string) {
+  return /^\d{6,18}$/.test(value);
 }

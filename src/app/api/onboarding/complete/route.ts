@@ -60,7 +60,8 @@ export async function POST(request: Request) {
       user_id: context.appUserId,
       sex: profile.sex,
       height_cm: Math.round(profile.heightCm),
-      weight_kg: profile.weightKg
+      weight_kg: profile.weightKg,
+      birthdate: ageToBirthdate(profile.age)
     },
     { onConflict: "user_id" }
   );
@@ -138,6 +139,12 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   }
 
   return Math.min(max, Math.max(min, numberValue));
+}
+
+function ageToBirthdate(age: number) {
+  const birthdate = new Date();
+  birthdate.setFullYear(birthdate.getFullYear() - age);
+  return birthdate.toISOString().slice(0, 10);
 }
 
 function isDiet(value: unknown): value is SettingsProfile["diet"] {

@@ -43,7 +43,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, message: "Unable to fetch image", status: response.status }, { status: 502 });
     }
 
-    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+    const contentType = normalizeImageContentType(response.headers.get("content-type"));
+
+    if (!contentType) {
+      return NextResponse.json({ ok: false, message: "Unsupported image content type" }, { status: 415 });
+    }
+
     const contentLength = Number(response.headers.get("content-length"));
 
     if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
@@ -113,7 +118,18 @@ function createImageResponse(body: ArrayBuffer, contentType: string, cacheStatus
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800, immutable",
+      "X-Content-Type-Options": "nosniff",
       "X-EcoFoodStock-Image-Cache": cacheStatus
     }
   });
+}
+
+function normalizeImageContentType(value: string | null) {
+  const mediaType = value?.split(";")[0]?.trim().toLowerCase() ?? "";
+
+  if (!mediaType.startsWith("image/") || mediaType === "image/svg+xml") {
+    return null;
+  }
+
+  return value ?? mediaType;
 }

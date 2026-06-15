@@ -15,3 +15,19 @@ export function createSupabaseServerClient() {
   });
 }
 
+export function createSupabasePublicServerClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    throw new Error("Variables Supabase publiques manquantes");
+  }
+
+  return createClient(url, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+}
+

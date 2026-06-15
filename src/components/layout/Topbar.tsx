@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Bell, UserRound } from "lucide-react";
 import { readStoredSettingsProfile, sanitizeAllStoredSettingsProfiles, SETTINGS_PROFILE_STORAGE_KEY } from "@/lib/settings-storage";
 import { getBrowserAccountStatus } from "@/lib/supabase/browser-account";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function Topbar() {
   const [modeLabel, setModeLabel] = useState<string | null>(null);
@@ -27,18 +28,29 @@ export function Topbar() {
   useEffect(() => {
     let active = true;
 
-    getBrowserAccountStatus()
-      .then((status) => {
+    async function hydrateAccountLabel() {
+      const supabase = createSupabaseBrowserClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData.session?.user;
+      const sessionDisplayName = getSessionDisplayName(sessionUser?.user_metadata, sessionUser?.email ?? null);
+      const status = await getBrowserAccountStatus({ force: true });
+
+      if (!active) {
+        return;
+      }
+
+      const email = status.email ?? sessionUser?.email ?? null;
+      const displayName = getValidDisplayName(status.displayName, email) ?? sessionDisplayName;
+      setAccountLabel(formatAccountLabel(displayName, email));
+    }
+
+    hydrateAccountLabel()
+      .catch(() => {
         if (!active) {
           return;
         }
 
-        setAccountLabel(formatAccountLabel(status.displayName, status.email));
-      })
-      .catch(() => {
-        if (active) {
-          setAccountLabel("Mon compte");
-        }
+        setAccountLabel("Mon compte");
       });
 
     return () => {
@@ -71,12 +83,47 @@ export function Topbar() {
 }
 
 function formatAccountLabel(displayName?: string | null, email?: string | null) {
-  const cleanDisplayName = displayName?.trim();
+  const cleanDisplayName = getValidDisplayName(displayName, email);
 
   if (cleanDisplayName) {
     return cleanDisplayName;
   }
 
   return email?.trim() || "Mon compte";
+}
+
+function getValidDisplayName(displayName: string | null | undefined, email: string | null | undefined) {
+  const cleanDisplayName = displayName?.trim();
+  const cleanEmail = email?.trim().toLowerCase();
+
+  if (!cleanDisplayName || (cleanEmail && cleanDisplayName.toLowerCase() === cleanEmail)) {
+    return null;
+  }
+
+  return cleanDisplayName;
+}
+
+function getSessionDisplayName(metadata: unknown, email: string | null) {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+
+  const record = metadata as Record<string, unknown>;
+  const candidates = [record.full_name, record.display_name, record.fullName, record.name, record.preferred_name];
+  const normalizedEmail = email?.trim().toLowerCase() ?? "";
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+
+    const value = candidate.trim();
+
+    if (value && value.toLowerCase() !== normalizedEmail) {
+      return value;
+    }
+  }
+
+  return null;
 }
 

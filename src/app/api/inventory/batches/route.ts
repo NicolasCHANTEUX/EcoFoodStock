@@ -52,7 +52,7 @@ export async function POST(req: Request) {
   }
 
   const payload = parsedPayload.data;
-  const access = await requireHouseholdAccess(req, { allowDemo: true, requireAuth: false });
+  const access = await requireHouseholdAccess(req, { requireAuth: true });
 
   if (!access.ok) {
     return access.response;

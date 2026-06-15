@@ -283,6 +283,16 @@ a {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-action) 22%, transparent);
 }
 
+.settings-choice-active .text-slate-500,
+.settings-choice-active .text-slate-600 {
+  color: currentColor;
+  opacity: 0.86;
+}
+
+.settings-choice-active .bg-slate-100 {
+  background: color-mix(in srgb, var(--brand-action) 18%, transparent);
+}
+
 .settings-choice-inactive {
   border-color: var(--border-subtle);
   background: var(--surface-card);

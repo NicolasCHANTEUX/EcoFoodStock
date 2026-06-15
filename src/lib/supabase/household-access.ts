@@ -13,6 +13,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type HouseholdAccessOptions = {
   allowDemo?: boolean;
+  allowRequestHouseholdId?: boolean;
   createHousehold?: boolean;
   requestedHouseholdId?: string | null;
   requireAuth?: boolean;
@@ -63,11 +64,13 @@ export async function requireHouseholdAccess(
   }
 
   if (options.allowDemo && canUseDemoMode()) {
+    const requestedDemoHouseholdId = options.allowRequestHouseholdId
+      ? cleanId(options.requestedHouseholdId) || cleanId(request.headers.get("x-household-id"))
+      : undefined;
     const householdId =
-      cleanId(options.requestedHouseholdId) ||
-      request.headers.get("x-household-id") ||
-      process.env.NEXT_PUBLIC_DEMO_HOUSEHOLD_ID ||
-      process.env.DEMO_HOUSEHOLD_ID ||
+      requestedDemoHouseholdId ||
+      cleanId(process.env.DEMO_HOUSEHOLD_ID) ||
+      cleanId(process.env.NEXT_PUBLIC_DEMO_HOUSEHOLD_ID) ||
       (await ensureDemoHousehold(supabase).catch(() => undefined));
 
     if (householdId) {
