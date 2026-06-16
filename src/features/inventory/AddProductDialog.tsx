@@ -184,6 +184,11 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       return;
     }
 
+    if (!window.isSecureContext) {
+      setScanError("La caméra nécessite une URL sécurisée. Utilise localhost ou une adresse HTTPS.");
+      return;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia) {
       setScanError("La caméra n'est pas accessible sur cet appareil.");
       return;
@@ -258,9 +263,9 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
         setBarcode(detectedCode);
         void lookupProduct(detectedCode);
       });
-    } catch {
+    } catch (error) {
       stopCamera();
-      setScanError("Impossible d'accéder à la caméra. Vérifie les permissions puis réessaie.");
+      setScanError(getCameraAccessErrorMessage(error));
     }
   }
 
@@ -568,4 +573,24 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       </form>
     </div>
   );
+}
+
+function getCameraAccessErrorMessage(error: unknown) {
+  if (!(error instanceof DOMException)) {
+    return "Impossible d'accéder à la caméra. Vérifie les permissions puis réessaie.";
+  }
+
+  if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+    return "L'accès à la caméra est refusé. Autorise la caméra dans le navigateur puis réessaie.";
+  }
+
+  if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+    return "Aucune caméra n'a été trouvée sur cet appareil.";
+  }
+
+  if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+    return "La caméra est déjà utilisée par une autre application ou un autre onglet.";
+  }
+
+  return "Impossible d'accéder à la caméra. Vérifie les permissions puis réessaie.";
 }
