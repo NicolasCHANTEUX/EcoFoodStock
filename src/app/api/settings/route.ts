@@ -3,14 +3,9 @@ import { z } from "zod";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
-  buildSettingsChangeSummary,
-  calculateBmi,
   calculateMaintenanceCalories,
   calculateTargetCalories,
   defaultSettingsProfile,
-  formatBmi,
-  formatCalories,
-  getGoalLabel,
   type SettingsProfile
 } from "@/lib/settings";
 
@@ -36,8 +31,9 @@ type SettingsHistoryPayload = {
   userId: string;
   previousProfile: SettingsProfile;
   profile: SettingsProfile;
-  changes: string;
 };
+
+type SettingsField = keyof SettingsProfile;
 
 const GOAL_ADJUSTMENT_INFERENCE_THRESHOLD = 100;
 
@@ -85,7 +81,7 @@ export async function POST(req: Request) {
   const appUserId = context.appUserId!;
   const previousProfile = await loadSettingsProfile(supabase, appUserId);
   const profile = normalizeProfile(parsedPayload.data);
-  const changes = buildSettingsChangeSummary(previousProfile, profile);
+  const changedFields = getChangedSettingsFields(previousProfile, profile);
 
   const { error: preferencesError } = await supabase.from("user_preferences").upsert(
     {
@@ -99,7 +95,8 @@ export async function POST(req: Request) {
   );
 
   if (preferencesError) {
-    return NextResponse.json({ ok: false, message: "Unable to save preferences", error: preferencesError.message }, { status: 500 });
+    console.error("settings preferences save failed", preferencesError.message);
+    return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramètres pour le moment." }, { status: 500 });
   }
 
   const { error: healthError } = await supabase.from("user_health_profiles").upsert(
@@ -115,7 +112,8 @@ export async function POST(req: Request) {
   );
 
   if (healthError) {
-    return NextResponse.json({ ok: false, message: "Unable to save health profile", error: healthError.message }, { status: 500 });
+    console.error("settings health profile save failed", healthError.message);
+    return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramètres pour le moment." }, { status: 500 });
   }
 
   const targetCalories = calculateTargetCalories(profile);
@@ -137,18 +135,18 @@ export async function POST(req: Request) {
 
   let historyEventCreated = false;
 
-  if (changes !== "Aucune modification") {
+  if (changedFields.length > 0) {
     const activityError = await createSettingsHistoryEvent(supabase, {
       householdId,
       userId: appUserId,
       previousProfile,
-      profile,
-      changes
+      profile
     });
 
     if (activityError) {
+      console.error("settings history event creation failed", activityError);
       return NextResponse.json(
-        { ok: false, message: "Settings saved but history event could not be recorded", error: activityError },
+        { ok: false, message: "Paramètres enregistrés, mais l'historique n'a pas pu être mis à jour." },
         { status: 500 }
       );
     }
@@ -163,20 +161,18 @@ async function createSettingsHistoryEvent(
   supabase: ReturnType<typeof createSupabaseServerClient>,
   payload: SettingsHistoryPayload
 ) {
-  const bmi = calculateBmi(payload.profile);
-  const maintenanceCalories = calculateMaintenanceCalories(payload.profile);
-  const targetCalories = calculateTargetCalories(payload.profile);
-  const description = `${payload.changes}. IMC ${formatBmi(bmi)}, besoin ${formatCalories(maintenanceCalories)}, objectif ${getGoalLabel(payload.profile.goal)} (${payload.profile.dailyCaloriesAdjustment > 0 ? "+" : ""}${payload.profile.dailyCaloriesAdjustment} kcal, cible ${formatCalories(targetCalories)}).`;
+  const changedFields = getChangedSettingsFields(payload.previousProfile, payload.profile);
+  const description = buildSafeSettingsHistoryDescription(changedFields);
   const baseEvent = {
     household_id: payload.householdId,
     user_id: payload.userId,
     title: "Paramètres mis à jour",
     description,
-    can_undo: true,
+    can_undo: false,
     metadata: {
       section: "settings",
-      previous_profile: payload.previousProfile,
-      next_profile: payload.profile
+      changed_fields: changedFields,
+      sensitive_fields_changed: changedFields.some(isSensitiveSettingsField)
     }
   };
 
@@ -194,12 +190,58 @@ async function createSettingsHistoryEvent(
     type: "undo",
     metadata: {
       ...baseEvent.metadata,
-      fallback_type: "settings_updated",
-      original_error: adjustedError.message
+      fallback_type: "settings_updated"
     }
   });
 
   return fallbackError?.message ?? null;
+}
+
+function getChangedSettingsFields(previous: SettingsProfile, next: SettingsProfile): SettingsField[] {
+  return Object.keys(next).filter((field): field is SettingsField => {
+    const key = field as SettingsField;
+    return previous[key] !== next[key];
+  });
+}
+
+function buildSafeSettingsHistoryDescription(fields: SettingsField[]) {
+  const labels: string[] = fields
+    .filter((field) => !isSensitiveSettingsField(field))
+    .map(getSettingsFieldPublicLabel);
+
+  if (fields.some(isSensitiveSettingsField)) {
+    labels.push("informations personnelles et objectifs");
+  }
+
+  const uniqueLabels = Array.from(new Set(labels));
+  return uniqueLabels.length > 0 ? `Champs mis à jour : ${uniqueLabels.join(", ")}.` : "Paramètres mis à jour.";
+}
+
+function isSensitiveSettingsField(field: SettingsField) {
+  return (
+    field === "age" ||
+    field === "weightKg" ||
+    field === "heightCm" ||
+    field === "sex" ||
+    field === "goal" ||
+    field === "dailyCaloriesAdjustment"
+  );
+}
+
+function getSettingsFieldPublicLabel(field: SettingsField) {
+  if (field === "appMode") {
+    return "mode";
+  }
+
+  if (field === "diet") {
+    return "régime";
+  }
+
+  if (field === "householdSize") {
+    return "foyer";
+  }
+
+  return "paramètres";
 }
 
 async function loadSettingsProfile(supabase: ReturnType<typeof createSupabaseServerClient>, appUserId: string) {

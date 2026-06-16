@@ -90,7 +90,15 @@ export async function POST(req: Request) {
   const { context, householdId, supabase } = access;
 
   if (payload.action === "add_item") {
-    const listId = await getOrCreateActiveListId(supabase, householdId);
+    const listId = await getOrCreateActiveListId(supabase, householdId).catch((error) => {
+      console.error("shopping active list creation failed", error);
+      return null;
+    });
+
+    if (!listId) {
+      return shoppingMutationError();
+    }
+
     const { error } = await supabase.from("shopping_items").insert({
       shopping_list_id: listId,
       label: payload.label,
@@ -103,7 +111,8 @@ export async function POST(req: Request) {
     });
 
     if (error) {
-      return NextResponse.json({ ok: false, message: "Unable to add shopping item", error: error.message }, { status: 500 });
+      console.error("shopping item insert failed", error.message);
+      return shoppingMutationError();
     }
   } else if (payload.action === "toggle_item") {
     const listId = await getActiveListId(supabase, householdId);
@@ -123,7 +132,8 @@ export async function POST(req: Request) {
       .eq("shopping_list_id", listId);
 
     if (error) {
-      return NextResponse.json({ ok: false, message: "Unable to update shopping item", error: error.message }, { status: 500 });
+      console.error("shopping item update failed", error.message);
+      return shoppingMutationError();
     }
   } else if (payload.action === "toggle_all") {
     const listId = await getActiveListId(supabase, householdId);
@@ -143,7 +153,8 @@ export async function POST(req: Request) {
       .in("status", ["active", "checked"]);
 
     if (error) {
-      return NextResponse.json({ ok: false, message: "Unable to update shopping items", error: error.message }, { status: 500 });
+      console.error("shopping items bulk update failed", error.message);
+      return shoppingMutationError();
     }
   } else if (payload.action === "delete_item") {
     const listId = await getActiveListId(supabase, householdId);
@@ -159,7 +170,8 @@ export async function POST(req: Request) {
       .eq("shopping_list_id", listId);
 
     if (error) {
-      return NextResponse.json({ ok: false, message: "Unable to delete shopping item", error: error.message }, { status: 500 });
+      console.error("shopping item delete failed", error.message);
+      return shoppingMutationError();
     }
   } else if (payload.action === "complete_list" || payload.action === "archive_list") {
     const { data: activeList } = await supabase
@@ -196,7 +208,8 @@ export async function POST(req: Request) {
       .eq("id", activeList.id);
 
     if (archiveError) {
-      return NextResponse.json({ ok: false, message: "Unable to archive shopping list", error: archiveError.message }, { status: 500 });
+      console.error("shopping list archive failed", archiveError.message);
+      return shoppingMutationError();
     }
 
     if ((checkedItems ?? []).length > 0) {
@@ -323,6 +336,13 @@ function normalizeCategory(value: unknown) {
   }
 
   return "other";
+}
+
+function shoppingMutationError() {
+  return NextResponse.json(
+    { ok: false, message: "Impossible de mettre à jour la liste de courses pour le moment." },
+    { status: 500 }
+  );
 }
 
 function groupShoppingItems(items: ShoppingItemRow[]) {

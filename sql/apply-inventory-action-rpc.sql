@@ -42,21 +42,32 @@ begin
     return jsonb_build_object('ok', false, 'status', 400, 'message', 'Quantity must be positive');
   end if;
 
+  if p_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
   if coalesce(auth.role(), '') <> 'service_role' then
-    if auth.uid() is null or p_user_id is null then
+    if auth.uid() is null then
       raise exception 'Authentication required';
     end if;
 
     if not exists (
       select 1
       from users u
-      join household_members hm on hm.user_id = u.id
       where u.id = p_user_id
         and u.auth_user_id = auth.uid()
-        and hm.household_id = p_household_id
     ) then
-      raise exception 'Forbidden household access';
+      raise exception 'Forbidden user context';
     end if;
+  end if;
+
+  if not exists (
+    select 1
+    from household_members hm
+    where hm.user_id = p_user_id
+      and hm.household_id = p_household_id
+  ) then
+      raise exception 'Forbidden household access';
   end if;
 
   select coalesce(sum(quantity_remaining), 0)
