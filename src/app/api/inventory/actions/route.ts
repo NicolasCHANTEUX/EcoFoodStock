@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiResult, jsonApiResult } from "@/lib/api/responses";
+import { checkRateLimits, createRateLimitResponse, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { normalizeQuantityUnit } from "@/lib/units";
 import { applyInventoryAction } from "@/services/inventory-service";
@@ -45,6 +46,24 @@ export async function POST(req: Request) {
   }
 
   const { context, householdId, supabase } = access;
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "inventory_action:user",
+      subject: rateLimitSubject(context.appUserId ?? householdId),
+      limit: 180,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "inventory_action:household",
+      subject: rateLimitSubject(householdId),
+      limit: 600,
+      windowSeconds: 10 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
 
   return jsonApiResult(
     await applyInventoryAction(supabase, {

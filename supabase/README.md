@@ -11,7 +11,7 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-The first migration is a baseline built from `schema-bdd-ecofoodstock.sql`, then the following migrations apply compatibility patches, RLS policies, and RPCs.
+The first migration is a baseline built from `schema-bdd-ecofoodstock.sql`, then the following migrations apply compatibility patches, RLS policies, RPCs, and the distributed rate limit table/function.
 
 ## Existing database already patched manually
 

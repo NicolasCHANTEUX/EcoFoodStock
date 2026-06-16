@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { createSupabasePublicServerClient } from "@/lib/supabase/server";
 
 const DEFAULT_LEGAL_TERMS_VERSION = "2026-06-07";
 const DEFAULT_PRIVACY_POLICY_VERSION = "2026-06-07";
-const RATE_LIMIT_MAX_KEYS = 500;
-const SIGNUP_IP_WINDOW_MS = 10 * 60 * 1000;
-const SIGNUP_EMAIL_WINDOW_MS = 60 * 60 * 1000;
 const SIGNUP_MAX_BY_IP = 8;
 const SIGNUP_MAX_BY_EMAIL = 3;
-
-const signupAttempts = new Map<string, number[]>();
 
 const signupSchema = z
   .object({
@@ -46,18 +42,26 @@ export async function POST(request: Request) {
   }
 
   const payload = parsedPayload.data;
-  const rateLimit = checkSignupRateLimit(request, payload.email);
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "signup:ip",
+      subject: rateLimitSubject(getClientIp(request)),
+      limit: SIGNUP_MAX_BY_IP,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "signup:email",
+      subject: rateLimitSubject(payload.email),
+      limit: SIGNUP_MAX_BY_EMAIL,
+      windowSeconds: 60 * 60
+    }
+  ]);
 
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Trop de tentatives. Reessayez dans quelques minutes." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rateLimit.retryAfterSeconds)
-        }
-      }
-    );
+    return createRateLimitResponse(rateLimit, {
+      bodyShape: "error",
+      message: "Trop de tentatives. Reessayez dans quelques minutes."
+    });
   }
 
   try {
@@ -111,56 +115,6 @@ function createSignupResponse(options: { needsEmailConfirmation: boolean; status
   );
 }
 
-function checkSignupRateLimit(request: Request, email: string) {
-  const ip = getClientIp(request);
-  const ipLimit = recordSignupAttempt(`ip:${ip}`, SIGNUP_MAX_BY_IP, SIGNUP_IP_WINDOW_MS);
-
-  if (!ipLimit.allowed) {
-    return ipLimit;
-  }
-
-  return recordSignupAttempt(`email:${email}`, SIGNUP_MAX_BY_EMAIL, SIGNUP_EMAIL_WINDOW_MS);
-}
-
-function recordSignupAttempt(key: string, maxAttempts: number, windowMs: number) {
-  const now = Date.now();
-  const recentAttempts = (signupAttempts.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
-
-  if (recentAttempts.length >= maxAttempts) {
-    signupAttempts.set(key, recentAttempts);
-    const oldestAttempt = recentAttempts[0] ?? now;
-    return {
-      allowed: false as const,
-      retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - oldestAttempt)) / 1000))
-    };
-  }
-
-  recentAttempts.push(now);
-  signupAttempts.set(key, recentAttempts);
-  pruneSignupAttempts(now);
-  return { allowed: true as const };
-}
-
-function pruneSignupAttempts(now: number) {
-  if (signupAttempts.size <= RATE_LIMIT_MAX_KEYS) {
-    return;
-  }
-
-  for (const [key, attempts] of signupAttempts.entries()) {
-    const recentAttempts = attempts.filter((timestamp) => now - timestamp < SIGNUP_EMAIL_WINDOW_MS);
-
-    if (recentAttempts.length === 0) {
-      signupAttempts.delete(key);
-    } else {
-      signupAttempts.set(key, recentAttempts);
-    }
-
-    if (signupAttempts.size <= RATE_LIMIT_MAX_KEYS) {
-      break;
-    }
-  }
-}
-
 function buildEmailRedirectTo(request: Request, inviteToken?: string) {
   const redirectUrl = new URL("/login", new URL(request.url).origin);
 
@@ -169,12 +123,6 @@ function buildEmailRedirectTo(request: Request, inviteToken?: string) {
   }
 
   return redirectUrl.toString();
-}
-
-function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  return forwardedFor || realIp || "local";
 }
 
 function isStrongEnoughPassword(value: string) {

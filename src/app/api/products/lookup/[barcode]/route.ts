@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { lookupOpenFoodFactsProduct } from "@/lib/open-food-facts";
 import { proxiedOffImageUrl } from "@/lib/image-proxy";
+import { lookupOpenFoodFactsProduct } from "@/lib/open-food-facts";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { resolveAccountContext } from "@/lib/supabase/account-context";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type RouteContext = {
   params: Promise<{ barcode: string }>;
@@ -26,6 +27,26 @@ export async function GET(req: Request, { params }: RouteContext) {
 
   if (!isSupportedBarcode(barcode)) {
     return NextResponse.json({ ok: false, message: "Invalid barcode" }, { status: 400 });
+  }
+
+  const clientIp = getClientIp(req);
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "product_lookup:ip",
+      subject: rateLimitSubject(clientIp),
+      limit: 120,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "product_lookup:barcode",
+      subject: rateLimitSubject(clientIp, barcode),
+      limit: 30,
+      windowSeconds: 10 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
   }
 
   const supabase = (() => {

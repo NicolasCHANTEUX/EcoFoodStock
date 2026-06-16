@@ -56,10 +56,12 @@ test("critical RPCs verify user and household access even when executed through 
   const batchRpc = readProjectFile("sql/create-inventory-batch-rpc.sql");
   const actionRpc = readProjectFile("sql/apply-inventory-action-rpc.sql");
   const undoRpc = readProjectFile("sql/undo-activity-event-rpc.sql");
+  const shoppingRpc = readProjectFile("sql/apply-shopping-action-rpc.sql");
 
   assertUserHouseholdGuard(batchRpc, "hm.household_id = p_household_id", "create inventory batch RPC");
   assertUserHouseholdGuard(actionRpc, "hm.household_id = p_household_id", "apply inventory action RPC");
   assertUserHouseholdGuard(undoRpc, "hm.household_id = v_event.household_id", "undo activity event RPC");
+  assertUserHouseholdGuard(shoppingRpc, "hm.household_id = p_household_id", "apply shopping action RPC");
 });
 
 test("critical RPC execution is revoked from public client roles", () => {
@@ -87,12 +89,87 @@ test("critical RPC execution is revoked from public client roles", () => {
     {
       path: "sql/delete-application-account-rpc.sql",
       signature: "delete_application_account_data(uuid)"
+    },
+    {
+      path: "sql/rate-limit-rpc.sql",
+      signature: "check_rate_limit(text, text, integer, integer)"
+    },
+    {
+      path: "sql/apply-shopping-action-rpc.sql",
+      signature: "apply_shopping_action(uuid, uuid, text, uuid, text, numeric, text, text, boolean)"
     }
   ];
 
   for (const check of rpcChecks) {
     assertServiceRoleOnlyRpc(readProjectFile(check.path), check.signature, check.path);
   }
+});
+
+test("distributed rate limit RPC hashes subjects and locks counters", () => {
+  const rateLimitRpc = readProjectFile("sql/rate-limit-rpc.sql");
+
+  assertIncludes(rateLimitRpc, "create table if not exists public.rate_limits", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "subject_hash text not null", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "encode(digest(btrim(p_subject), 'sha256'), 'hex')", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "where rate_key = v_rate_key\n    for update", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "exception when unique_violation then", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "alter table public.rate_limits enable row level security", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "revoke all on table public.rate_limits from anon", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "revoke all on table public.rate_limits from authenticated", "rate limit RPC");
+  assertServiceRoleOnlyRpc(rateLimitRpc, "check_rate_limit(text, text, integer, integer)", "rate limit RPC");
+});
+
+test("sensitive API routes use the distributed rate limiter", () => {
+  const routeChecks = [
+    "src/app/api/auth/signup/route.ts",
+    "src/app/api/products/lookup/[barcode]/route.ts",
+    "src/app/api/images/route.ts",
+    "src/app/api/household/invite/route.ts",
+    "src/app/api/household/join/route.ts",
+    "src/app/api/inventory/actions/route.ts",
+    "src/app/api/inventory/batches/route.ts",
+    "src/app/api/shopping/route.ts"
+  ];
+
+  for (const routePath of routeChecks) {
+    const source = readProjectFile(routePath);
+    assertIncludes(source, "checkRateLimits", routePath);
+    assertIncludes(source, "createRateLimitResponse", routePath);
+  }
+
+  const signupRoute = readProjectFile("src/app/api/auth/signup/route.ts");
+  assertNotIncludes(signupRoute, "signupAttempts", "signup route");
+  assertNotIncludes(signupRoute, "new Map<string, number[]>", "signup route");
+});
+
+test("shopping mutations are delegated to a transactional RPC", () => {
+  const shoppingRoute = readProjectFile("src/app/api/shopping/route.ts");
+  const shoppingService = readProjectFile("src/services/shopping-service.ts");
+  const shoppingRpc = readProjectFile("sql/apply-shopping-action-rpc.sql");
+
+  assertIncludes(shoppingRoute, "mutateShoppingState", "shopping route");
+  assertNotIncludes(shoppingRoute, ".from(\"shopping_lists\")", "shopping route");
+  assertNotIncludes(shoppingRoute, ".from(\"shopping_items\")", "shopping route");
+  assertNotIncludes(shoppingRoute, ".from(\"activity_events\")", "shopping route");
+
+  assertIncludes(shoppingService, ".rpc(\"apply_shopping_action\"", "shopping service");
+  assertIncludes(shoppingService, "loadShoppingState", "shopping service");
+  assertIncludes(shoppingService, "isMissingRpcError(error.message, error.code, \"apply_shopping_action\")", "shopping service");
+
+  assertIncludes(shoppingRpc, "from public.households h\n  where h.id = p_household_id\n  for update", "shopping RPC");
+  assertIncludes(shoppingRpc, "from public.shopping_lists sl", "shopping RPC");
+  assertIncludes(shoppingRpc, "limit 1\n  for update", "shopping RPC");
+  assertIncludes(shoppingRpc, "insert into public.shopping_items", "shopping RPC");
+  assertIncludes(shoppingRpc, "update public.shopping_items", "shopping RPC");
+  assertIncludes(shoppingRpc, "delete from public.shopping_items", "shopping RPC");
+  assertIncludes(shoppingRpc, "update public.shopping_lists", "shopping RPC");
+  assertIncludes(shoppingRpc, "insert into public.activity_events", "shopping RPC");
+  assertIncludes(shoppingRpc, "jsonb_build_object(\n        'source', 'shopping'", "shopping RPC");
+  assertServiceRoleOnlyRpc(
+    shoppingRpc,
+    "apply_shopping_action(uuid, uuid, text, uuid, text, numeric, text, text, boolean)",
+    "shopping RPC"
+  );
 });
 
 test("inventory action and undo RPCs use database locking for critical mutable rows", () => {
@@ -148,7 +225,9 @@ test("Supabase migrations include the critical RPC and policy files", () => {
     "20260616_080_apply_inventory_action_rpc.sql",
     "20260616_090_undo_activity_event_rpc.sql",
     "20260616_110_create_invitation_token_rpc.sql",
-    "20260616_120_join_household_with_invitation_rpc.sql"
+    "20260616_120_join_household_with_invitation_rpc.sql",
+    "20260616_130_rate_limit_rpc.sql",
+    "20260616_140_apply_shopping_action_rpc.sql"
   ];
 
   for (const migration of expectedMigrations) {
@@ -159,5 +238,17 @@ test("Supabase migrations include the critical RPC and policy files", () => {
     migrations.indexOf("20260616_060_enable_rls_policies.sql") <
       migrations.indexOf("20260616_070_create_inventory_batch_rpc.sql"),
     "RLS migration should run before RPC migrations"
+  );
+
+  assert.ok(
+    migrations.indexOf("20260616_120_join_household_with_invitation_rpc.sql") <
+      migrations.indexOf("20260616_130_rate_limit_rpc.sql"),
+    "rate limit migration should run after invitation RPC migrations"
+  );
+
+  assert.ok(
+    migrations.indexOf("20260616_130_rate_limit_rpc.sql") <
+      migrations.indexOf("20260616_140_apply_shopping_action_rpc.sql"),
+    "shopping action migration should run after rate limit migration"
   );
 });

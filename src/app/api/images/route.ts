@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 
 const ALLOWED_HOSTS = new Set(["images.openfoodfacts.org", "static.openfoodfacts.org", "images.openfoodfacts.net"]);
 const IMAGE_FETCH_TIMEOUT_MS = 15_000;
@@ -40,6 +41,26 @@ export async function GET(req: Request) {
 
   if (cachedImage) {
     return createImageResponse(cachedImage.body, cachedImage.contentType, "HIT");
+  }
+
+  const clientIp = getClientIp(req);
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "image_proxy:ip",
+      subject: rateLimitSubject(clientIp),
+      limit: 300,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "image_proxy:asset",
+      subject: rateLimitSubject(clientIp, parsed.hostname, parsed.pathname),
+      limit: 80,
+      windowSeconds: 10 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
   }
 
   try {
