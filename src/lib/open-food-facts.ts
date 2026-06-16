@@ -67,6 +67,18 @@ type SearchOpenFoodFactsOptions = {
   sortBy?: "unique_scans_n" | "product_name";
 };
 
+type CacheEntry<T> = {
+  expiresAt: number;
+  promise: Promise<T>;
+};
+
+type CachedValueOptions<T> = {
+  cacheTtlMs: (value: T) => number;
+  fallbackValue: T;
+  errorTtlMs: number;
+  logContext: string;
+};
+
 const OFF_PRODUCT_FIELDS = [
   "code",
   "product_name",
@@ -86,6 +98,13 @@ const OFF_PRODUCT_FIELDS = [
 ].join(",");
 
 const OFF_FETCH_TIMEOUT_MS = 8_000;
+const OFF_CACHE_MAX_ENTRIES = 300;
+const OFF_PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const OFF_SEARCH_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const OFF_NEGATIVE_CACHE_TTL_MS = 30 * 60 * 1000;
+const OFF_ERROR_CACHE_TTL_MS = 2 * 60 * 1000;
+
+const offCache = new Map<string, CacheEntry<unknown>>();
 
 export async function lookupOpenFoodFactsProduct(barcode: string): Promise<OpenFoodFactsLookupResult | null> {
   const cleanBarcode = barcode.trim();
@@ -94,23 +113,12 @@ export async function lookupOpenFoodFactsProduct(barcode: string): Promise<OpenF
     return null;
   }
 
-  const response = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json?fields=${encodeURIComponent(OFF_PRODUCT_FIELDS)}`, {
-    headers: {
-      "User-Agent": "EcoFoodStock/0.1.0"
-    }
+  return getCachedOpenFoodFactsValue(`product:${cleanBarcode}`, () => fetchOpenFoodFactsProduct(cleanBarcode), {
+    cacheTtlMs: (value) => (value ? OFF_PRODUCT_CACHE_TTL_MS : OFF_NEGATIVE_CACHE_TTL_MS),
+    fallbackValue: null,
+    errorTtlMs: OFF_ERROR_CACHE_TTL_MS,
+    logContext: "Open Food Facts product lookup failed"
   });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = (await response.json()) as OpenFoodFactsApiResponse;
-
-  if (payload.status !== 1 || !payload.product) {
-    return null;
-  }
-
-  return mapOffProduct(payload.product, cleanBarcode);
 }
 
 export async function searchOpenFoodFactsProducts(
@@ -141,6 +149,39 @@ export async function searchOpenFoodFactsProducts(
     params.set("sort_by", options.sortBy);
   }
 
+  return getCachedOpenFoodFactsValue(`search:${params.toString()}`, () => fetchOpenFoodFactsSearch(params, pageSize), {
+    cacheTtlMs: (value) => (value.length > 0 ? OFF_SEARCH_CACHE_TTL_MS : OFF_NEGATIVE_CACHE_TTL_MS),
+    fallbackValue: [],
+    errorTtlMs: OFF_ERROR_CACHE_TTL_MS,
+    logContext: "Open Food Facts search failed"
+  });
+}
+
+export function clearOpenFoodFactsCache() {
+  offCache.clear();
+}
+
+async function fetchOpenFoodFactsProduct(cleanBarcode: string) {
+  const response = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json?fields=${encodeURIComponent(OFF_PRODUCT_FIELDS)}`, {
+    headers: {
+      "User-Agent": "EcoFoodStock/0.1.0"
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as OpenFoodFactsApiResponse;
+
+  if (payload.status !== 1 || !payload.product) {
+    return null;
+  }
+
+  return mapOffProduct(payload.product, cleanBarcode);
+}
+
+async function fetchOpenFoodFactsSearch(params: URLSearchParams, pageSize: number) {
   const response = await fetchWithTimeout(`https://world.openfoodfacts.org/cgi/search.pl?${params.toString()}`, {
     headers: {
       "User-Agent": "EcoFoodStock/0.1.0"
@@ -158,6 +199,61 @@ export async function searchOpenFoodFactsProducts(
   }
 
   return payload.products.filter(Boolean).slice(0, pageSize).map((product) => mapOffProduct(product));
+}
+
+function getCachedOpenFoodFactsValue<T>(key: string, loadValue: () => Promise<T>, options: CachedValueOptions<T>) {
+  const now = Date.now();
+  const cachedEntry = offCache.get(key) as CacheEntry<T> | undefined;
+
+  if (cachedEntry && cachedEntry.expiresAt > now) {
+    return cachedEntry.promise;
+  }
+
+  const entry: CacheEntry<T> = {
+    expiresAt: now + options.errorTtlMs,
+    promise: Promise.resolve()
+      .then(loadValue)
+      .then((value) => {
+        entry.expiresAt = Date.now() + options.cacheTtlMs(value);
+        return value;
+      })
+      .catch((error) => {
+        entry.expiresAt = Date.now() + options.errorTtlMs;
+        console.warn(options.logContext, error instanceof Error ? error.message : String(error));
+        return options.fallbackValue;
+      })
+  };
+
+  offCache.delete(key);
+  offCache.set(key, entry);
+  pruneOpenFoodFactsCache(now);
+  return entry.promise;
+}
+
+function pruneOpenFoodFactsCache(now: number) {
+  if (offCache.size <= OFF_CACHE_MAX_ENTRIES) {
+    return;
+  }
+
+  for (const [key, entry] of offCache.entries()) {
+    if (entry.expiresAt <= now) {
+      offCache.delete(key);
+    }
+
+    if (offCache.size <= OFF_CACHE_MAX_ENTRIES) {
+      return;
+    }
+  }
+
+  while (offCache.size > OFF_CACHE_MAX_ENTRIES) {
+    const oldestKey = offCache.keys().next().value;
+
+    if (!oldestKey) {
+      return;
+    }
+
+    offCache.delete(oldestKey);
+  }
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit) {

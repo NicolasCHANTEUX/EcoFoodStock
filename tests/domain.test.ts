@@ -3,6 +3,7 @@ import test from "node:test";
 import { daysUntilExpiration, formatExpirationLabel, getExpirationStatus } from "@/lib/expiration";
 import { planInventoryBatchConsumption } from "@/lib/inventory-actions";
 import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lines";
+import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
 import {
   SETTINGS_PROFILE_STORAGE_KEY,
   readStoredSettingsProfile,
@@ -102,6 +103,66 @@ test("settings local storage keeps only non-sensitive preferences", () => {
   );
 });
 
+test("Open Food Facts cache deduplicates concurrent lookups and repeated searches", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+
+  clearOpenFoodFactsCache();
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetchCount += 1;
+    const url = String(input);
+
+    if (url.includes("/api/v2/product/")) {
+      return createJsonResponse({
+        status: 1,
+        product: {
+          code: "1234567890123",
+          product_name: "Produit test",
+          brands: "EcoFoodStock",
+          quantity: "500 g"
+        }
+      });
+    }
+
+    return createJsonResponse({
+      products: [
+        {
+          code: "9876543210000",
+          product_name: "Riz test",
+          quantity: "1 kg"
+        }
+      ]
+    });
+  }) as typeof fetch;
+
+  try {
+    const [firstLookup, secondLookup] = await Promise.all([
+      lookupOpenFoodFactsProduct("1234567890123"),
+      lookupOpenFoodFactsProduct("1234567890123")
+    ]);
+
+    assert.equal(firstLookup?.name, "Produit test");
+    assert.equal(secondLookup?.name, "Produit test");
+    assert.equal(fetchCount, 1);
+
+    const thirdLookup = await lookupOpenFoodFactsProduct("1234567890123");
+    assert.equal(thirdLookup?.quantityValue, 500);
+    assert.equal(fetchCount, 1);
+
+    const [firstSearch, secondSearch] = await Promise.all([
+      searchOpenFoodFactsProducts("riz test", 2, { sortBy: "unique_scans_n" }),
+      searchOpenFoodFactsProducts("riz test", 2, { sortBy: "unique_scans_n" })
+    ]);
+
+    assert.equal(firstSearch[0]?.name, "Riz test");
+    assert.equal(secondSearch[0]?.name, "Riz test");
+    assert.equal(fetchCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearOpenFoodFactsCache();
+  }
+});
+
 class MemoryStorage {
   private readonly values = new Map<string, string>();
 
@@ -128,4 +189,13 @@ class MemoryStorage {
   setItem(key: string, value: string) {
     this.values.set(key, value);
   }
+}
+
+function createJsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
 }
