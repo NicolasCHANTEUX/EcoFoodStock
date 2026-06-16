@@ -75,6 +75,8 @@ En local, Chrome peut proposer l'installation sur `localhost`. Si l'option n'app
 - Renseigner les variables dans `.env.local` a partir de `.env.example`.
 - Le lookup code-barres passe par `GET /api/products/lookup/[barcode]`.
 - Cette route interroge Open Food Facts, API gratuite de reference pour les produits alimentaires.
+- Les migrations database versionnees sont dans `supabase/migrations/`.
+- Pour une base Supabase neuve ou remise a zero, utiliser `supabase db push`.
 
 Variables attendues :
 
