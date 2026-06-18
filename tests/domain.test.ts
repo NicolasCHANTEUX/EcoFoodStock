@@ -4,6 +4,7 @@ import { daysUntilExpiration, formatExpirationLabel, getExpirationStatus } from 
 import { planInventoryBatchConsumption } from "@/lib/inventory-actions";
 import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lines";
 import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
+import { getClientIp } from "@/lib/rate-limit";
 import {
   SETTINGS_PROFILE_STORAGE_KEY,
   readStoredSettingsProfile,
@@ -163,6 +164,46 @@ test("Open Food Facts cache deduplicates concurrent lookups and repeated searche
   }
 });
 
+test("rate limit client IP strategy only trusts configured proxy headers", () => {
+  const originalStrategy = process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalVercel = process.env.VERCEL;
+  const originalVercelEnv = process.env.VERCEL_ENV;
+  const request = new Request("http://localhost/test", {
+    headers: {
+      "cf-connecting-ip": "203.0.113.10",
+      "x-forwarded-for": "198.51.100.7, 198.51.100.8",
+      "x-real-ip": "192.0.2.20"
+    }
+  });
+
+  try {
+    restoreEnvValue("NODE_ENV", "production");
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+
+    process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY = "cloudflare";
+    assert.equal(getClientIp(request), "203.0.113.10");
+
+    process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY = "vercel";
+    assert.equal(getClientIp(request), "198.51.100.7");
+
+    process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY = "none";
+    assert.equal(getClientIp(request), "unknown:untrusted");
+
+    delete process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY;
+    assert.equal(getClientIp(request), "unknown:untrusted");
+
+    process.env.VERCEL = "1";
+    assert.equal(getClientIp(request), "198.51.100.7");
+  } finally {
+    restoreEnvValue("ECOFOODSTOCK_CLIENT_IP_STRATEGY", originalStrategy);
+    restoreEnvValue("NODE_ENV", originalNodeEnv);
+    restoreEnvValue("VERCEL", originalVercel);
+    restoreEnvValue("VERCEL_ENV", originalVercelEnv);
+  }
+});
+
 class MemoryStorage {
   private readonly values = new Map<string, string>();
 
@@ -198,4 +239,12 @@ function createJsonResponse(body: unknown) {
       "Content-Type": "application/json"
     }
   });
+}
+
+function restoreEnvValue(key: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
 }

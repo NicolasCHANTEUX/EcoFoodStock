@@ -5,6 +5,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const DEFAULT_RATE_LIMIT_MESSAGE = "Trop de requetes. Reessayez dans quelques instants.";
 const RATE_LIMIT_UNAVAILABLE_MESSAGE = "Controle de frequence indisponible. Reessayez dans quelques instants.";
+const CLIENT_IP_STRATEGY_ENV = "ECOFOODSTOCK_CLIENT_IP_STRATEGY";
+
+type ClientIpStrategy = "auto" | "cloudflare" | "development" | "none" | "trusted-proxy" | "vercel";
 
 export type RateLimitRule = {
   scope: string;
@@ -119,11 +122,25 @@ export function createRateLimitResponse(decision: RateLimitDecision, options: Ra
 }
 
 export function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  const cloudflareIp = request.headers.get("cf-connecting-ip")?.trim();
+  const strategy = resolveClientIpStrategy();
 
-  return forwardedFor || realIp || cloudflareIp || "local";
+  if (strategy === "cloudflare") {
+    return getTrustedHeaderIp(request, ["cf-connecting-ip"]) ?? "unknown:cloudflare";
+  }
+
+  if (strategy === "vercel") {
+    return getTrustedHeaderIp(request, ["x-forwarded-for", "x-real-ip"]) ?? "unknown:vercel";
+  }
+
+  if (strategy === "trusted-proxy") {
+    return getTrustedHeaderIp(request, ["x-forwarded-for", "x-real-ip"]) ?? "unknown:trusted-proxy";
+  }
+
+  if (strategy === "development") {
+    return getTrustedHeaderIp(request, ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"]) ?? "local";
+  }
+
+  return "unknown:untrusted";
 }
 
 export function rateLimitSubject(...parts: Array<number | string | null | undefined>) {
@@ -160,6 +177,94 @@ function normalizeRateLimitRule(rule: RateLimitRule): RateLimitRule | null {
     limit,
     windowSeconds
   };
+}
+
+function resolveClientIpStrategy(): Exclude<ClientIpStrategy, "auto"> {
+  const configuredStrategy = normalizeClientIpStrategy(process.env[CLIENT_IP_STRATEGY_ENV]);
+
+  if (configuredStrategy && configuredStrategy !== "auto") {
+    return configuredStrategy;
+  }
+
+  if (process.env.NODE_ENV !== "production" && process.env.VERCEL_ENV !== "production") {
+    return "development";
+  }
+
+  if (process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV)) {
+    return "vercel";
+  }
+
+  return "none";
+}
+
+function normalizeClientIpStrategy(value: string | undefined): ClientIpStrategy | null {
+  const normalized = value?.trim().toLowerCase();
+
+  if (
+    normalized === "auto" ||
+    normalized === "cloudflare" ||
+    normalized === "development" ||
+    normalized === "none" ||
+    normalized === "trusted-proxy" ||
+    normalized === "vercel"
+  ) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function getTrustedHeaderIp(request: Request, headerNames: string[]) {
+  for (const headerName of headerNames) {
+    const normalizedIp = normalizeIpHeaderValue(request.headers.get(headerName));
+
+    if (normalizedIp) {
+      return normalizedIp;
+    }
+  }
+
+  return null;
+}
+
+function normalizeIpHeaderValue(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const firstValue = value.split(",")[0]?.trim().replace(/^"|"$/g, "");
+  const withoutBrackets = firstValue?.startsWith("[") ? firstValue.slice(1, firstValue.indexOf("]")) : firstValue;
+  const withoutIpv4Port = withoutBrackets?.replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, "$1");
+
+  if (!withoutIpv4Port) {
+    return null;
+  }
+
+  return isValidIpAddress(withoutIpv4Port) ? withoutIpv4Port : null;
+}
+
+function isValidIpAddress(value: string) {
+  return isValidIpv4Address(value) || isValidIpv6Address(value);
+}
+
+function isValidIpv4Address(value: string) {
+  const parts = value.split(".");
+
+  if (parts.length !== 4) {
+    return false;
+  }
+
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) {
+      return false;
+    }
+
+    const numericPart = Number(part);
+    return numericPart >= 0 && numericPart <= 255;
+  });
+}
+
+function isValidIpv6Address(value: string) {
+  return value.includes(":") && /^[0-9a-f:.]+$/i.test(value) && value.length <= 45;
 }
 
 function parseRpcRateLimitPayload(value: unknown): RpcRateLimitPayload | null {

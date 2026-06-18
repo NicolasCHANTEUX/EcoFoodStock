@@ -110,7 +110,20 @@ test("distributed rate limit RPC hashes subjects and locks counters", () => {
 
   assertIncludes(rateLimitRpc, "create table if not exists public.rate_limits", "rate limit RPC");
   assertIncludes(rateLimitRpc, "subject_hash text not null", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "create extension if not exists pgcrypto", "rate limit RPC");
+  assertIncludes(rateLimitRpc, "set search_path = public, extensions", "rate limit RPC");
   assertIncludes(rateLimitRpc, "encode(digest(btrim(p_subject), 'sha256'), 'hex')", "rate limit RPC");
+  assertOrdered(
+    rateLimitRpc,
+    [
+      "v_rate_key := p_scope || ':' || v_subject_hash;",
+      "if random() < 0.01 then",
+      "delete from public.rate_limits",
+      "where expires_at < v_now - interval '5 minutes';\n  end if;",
+      "loop"
+    ],
+    "rate limit RPC cleanup"
+  );
   assertIncludes(rateLimitRpc, "where rate_key = v_rate_key\n    for update", "rate limit RPC");
   assertIncludes(rateLimitRpc, "exception when unique_violation then", "rate limit RPC");
   assertIncludes(rateLimitRpc, "alter table public.rate_limits enable row level security", "rate limit RPC");
@@ -140,6 +153,34 @@ test("sensitive API routes use the distributed rate limiter", () => {
   const signupRoute = readProjectFile("src/app/api/auth/signup/route.ts");
   assertNotIncludes(signupRoute, "signupAttempts", "signup route");
   assertNotIncludes(signupRoute, "new Map<string, number[]>", "signup route");
+});
+
+test("image proxy has bounded upstream fetches, CDN caching and miss-only rate limits", () => {
+  const imageRoute = readProjectFile("src/app/api/images/route.ts");
+
+  assertIncludes(imageRoute, "const IMAGE_FETCH_TIMEOUT_MS = 5_000", "image proxy");
+  assertIncludes(imageRoute, "readLimitedImageBody", "image proxy");
+  assertIncludes(imageRoute, "MAX_IMAGE_BYTES", "image proxy");
+  assertIncludes(imageRoute, "redirect: \"manual\"", "image proxy");
+  assertIncludes(imageRoute, "CDN-Cache-Control", "image proxy");
+  assertIncludes(imageRoute, "Vercel-CDN-Cache-Control", "image proxy");
+  assertIncludes(imageRoute, "stale-if-error", "image proxy");
+  assertIncludes(imageRoute, "X-EcoFoodStock-Image-Cache", "image proxy");
+  assertIncludes(imageRoute, "image_proxy:asset_by_ip", "image proxy");
+  assertIncludes(imageRoute, "image_proxy:asset_global", "image proxy");
+  assertIncludes(imageRoute, "kind: \"error\"", "image proxy");
+  assertOrdered(
+    imageRoute,
+    [
+      "const cachedImage = getCachedImage(cacheKey);",
+      "if (cachedImage?.kind === \"image\")",
+      "if (cachedImage?.kind === \"error\")",
+      "const clientIp = getClientIp(req);",
+      "scope: \"image_proxy:asset_global\"",
+      "const fetchedImage = await fetchImagePayload(cacheKey);"
+    ],
+    "image proxy cache and rate limit flow"
+  );
 });
 
 test("shopping mutations are delegated to a transactional RPC", () => {
@@ -213,6 +254,24 @@ test("settings history does not store sensitive profile snapshots", () => {
   assertNotIncludes(backfillSql, "coalesce(metadata->>'section', '') = 'settings'", "history backfill");
 });
 
+test("Open Food Facts product lookup uses a persistent database cache", () => {
+  const cacheSql = readProjectFile("sql/open-food-facts-persistent-cache.sql");
+  const lookupRoute = readProjectFile("src/app/api/products/lookup/[barcode]/route.ts");
+
+  assertIncludes(cacheSql, "off_last_fetched_at timestamptz", "Open Food Facts cache migration");
+  assertIncludes(cacheSql, "off_fetch_status text not null default 'unknown'", "Open Food Facts cache migration");
+  assertIncludes(cacheSql, "off_quantity_value numeric(10,3)", "Open Food Facts cache migration");
+  assertIncludes(cacheSql, "products_off_fetch_status_check", "Open Food Facts cache migration");
+  assertIncludes(cacheSql, "products_off_cache_idx", "Open Food Facts cache migration");
+
+  assertIncludes(lookupRoute, "lookupOpenFoodFactsProductStatus", "product lookup route");
+  assertIncludes(lookupRoute, "off_last_fetched_at", "product lookup route");
+  assertIncludes(lookupRoute, "off_fetch_status", "product lookup route");
+  assertIncludes(lookupRoute, "OFF_PERSISTED_FOUND_TTL_MS", "product lookup route");
+  assertIncludes(lookupRoute, "isPersistedOffCacheFresh", "product lookup route");
+  assertIncludes(lookupRoute, "updateCatalogProductWithOffData", "product lookup route");
+});
+
 test("Supabase migrations include the critical RPC and policy files", () => {
   const migrationsDir = path.join(root, "supabase", "migrations");
   assert.ok(existsSync(migrationsDir), "supabase/migrations should exist");
@@ -227,7 +286,10 @@ test("Supabase migrations include the critical RPC and policy files", () => {
     "20260616_110_create_invitation_token_rpc.sql",
     "20260616_120_join_household_with_invitation_rpc.sql",
     "20260616_130_rate_limit_rpc.sql",
-    "20260616_140_apply_shopping_action_rpc.sql"
+    "20260616_140_apply_shopping_action_rpc.sql",
+    "20260616_150_rate_limit_probabilistic_cleanup.sql",
+    "20260616_160_open_food_facts_persistent_cache.sql",
+    "20260618_170_rate_limit_pgcrypto_search_path.sql"
   ];
 
   for (const migration of expectedMigrations) {
@@ -250,5 +312,23 @@ test("Supabase migrations include the critical RPC and policy files", () => {
     migrations.indexOf("20260616_130_rate_limit_rpc.sql") <
       migrations.indexOf("20260616_140_apply_shopping_action_rpc.sql"),
     "shopping action migration should run after rate limit migration"
+  );
+
+  assert.ok(
+    migrations.indexOf("20260616_140_apply_shopping_action_rpc.sql") <
+      migrations.indexOf("20260616_150_rate_limit_probabilistic_cleanup.sql"),
+    "rate limit cleanup migration should run after shopping action migration"
+  );
+
+  assert.ok(
+    migrations.indexOf("20260616_150_rate_limit_probabilistic_cleanup.sql") <
+      migrations.indexOf("20260616_160_open_food_facts_persistent_cache.sql"),
+    "Open Food Facts cache migration should run after rate limit cleanup migration"
+  );
+
+  assert.ok(
+    migrations.indexOf("20260616_160_open_food_facts_persistent_cache.sql") <
+      migrations.indexOf("20260618_170_rate_limit_pgcrypto_search_path.sql"),
+    "rate limit pgcrypto search path migration should run after Open Food Facts cache migration"
   );
 });

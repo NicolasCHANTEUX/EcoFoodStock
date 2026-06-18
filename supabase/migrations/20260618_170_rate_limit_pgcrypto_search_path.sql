@@ -1,27 +1,9 @@
--- Distributed rate limiting backed by Supabase.
--- Safe to run multiple times.
+-- Ensure the distributed rate limit RPC can resolve pgcrypto.digest on Supabase.
+-- Supabase commonly exposes extensions from the `extensions` schema, while the
+-- SECURITY DEFINER function previously used only `public` in its search path.
 
-create extension if not exists pgcrypto;
-
-create table if not exists public.rate_limits (
-  rate_key text primary key,
-  scope text not null,
-  subject_hash text not null,
-  window_start timestamptz not null,
-  attempts integer not null default 0 check (attempts >= 0),
-  expires_at timestamptz not null,
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists rate_limits_expires_at_idx
-  on public.rate_limits (expires_at);
-
-alter table public.rate_limits enable row level security;
-
-revoke all on table public.rate_limits from PUBLIC;
-revoke all on table public.rate_limits from anon;
-revoke all on table public.rate_limits from authenticated;
-grant select, insert, update, delete on table public.rate_limits to service_role;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 create or replace function public.check_rate_limit(
   p_scope text,
@@ -67,8 +49,10 @@ begin
   v_subject_hash := encode(digest(btrim(p_subject), 'sha256'), 'hex');
   v_rate_key := p_scope || ':' || v_subject_hash;
 
-  delete from public.rate_limits
-  where expires_at < v_now - interval '5 minutes';
+  if random() < 0.01 then
+    delete from public.rate_limits
+    where expires_at < v_now - interval '5 minutes';
+  end if;
 
   loop
     select attempts, window_start

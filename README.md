@@ -75,6 +75,8 @@ En local, Chrome peut proposer l'installation sur `localhost`. Si l'option n'app
 - Renseigner les variables dans `.env.local` a partir de `.env.example`.
 - Le lookup code-barres passe par `GET /api/products/lookup/[barcode]`.
 - Cette route interroge Open Food Facts, API gratuite de reference pour les produits alimentaires.
+- Les enrichissements Open Food Facts trouves sont caches en base dans `products.off_*` pour eviter de rappeler l'API a chaque scan.
+- Les images Open Food Facts passent par `/api/images` avec timeout court, cache navigateur/CDN, cache negatif bref et rate limit uniquement sur les MISS du proxy.
 - Les migrations database versionnees sont dans `supabase/migrations/`.
 - Pour une base Supabase neuve ou remise a zero, utiliser `supabase db push`.
 
@@ -84,7 +86,18 @@ Variables attendues :
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+ECOFOODSTOCK_CLIENT_IP_STRATEGY=auto
 ```
+
+`ECOFOODSTOCK_CLIENT_IP_STRATEGY` controle quels headers IP sont fiables pour le rate limit :
+
+- `auto` : recommande par defaut. En dev, accepte les headers locaux. En prod Vercel, utilise `x-forwarded-for`. En autre prod, ne fait pas confiance aux headers IP.
+- `vercel` : utilise `x-forwarded-for`, a reserver a un deploiement derriere Vercel.
+- `cloudflare` : utilise `cf-connecting-ip`, a reserver a un trafic force derriere Cloudflare.
+- `trusted-proxy` : utilise `x-forwarded-for` / `x-real-ip`, uniquement si un proxy de confiance nettoie ces headers.
+- `none` : ignore les headers IP et groupe les requetes sous une cle inconnue.
+
+En production, placer `/api/images` derriere le CDN de l'hebergeur. La route envoie `Cache-Control`, `CDN-Cache-Control` et `Vercel-CDN-Cache-Control` pour conserver les images Open Food Facts longtemps cote CDN, garder les erreurs seulement quelques minutes, et limiter les appels reseau au strict necessaire.
 
 OAuth setup:
 

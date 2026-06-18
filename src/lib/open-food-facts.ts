@@ -19,6 +19,16 @@ export type OpenFoodFactsLookupResult = {
   source: "open_food_facts";
 };
 
+export type OpenFoodFactsLookupStatus =
+  | {
+      status: "found";
+      product: OpenFoodFactsLookupResult;
+    }
+  | {
+      status: "not_found" | "error";
+      product?: undefined;
+    };
+
 type OpenFoodFactsProduct = {
   code?: string;
   product_name?: string;
@@ -107,15 +117,26 @@ const OFF_ERROR_CACHE_TTL_MS = 2 * 60 * 1000;
 const offCache = new Map<string, CacheEntry<unknown>>();
 
 export async function lookupOpenFoodFactsProduct(barcode: string): Promise<OpenFoodFactsLookupResult | null> {
+  const result = await lookupOpenFoodFactsProductStatus(barcode);
+  return result.status === "found" ? result.product : null;
+}
+
+export async function lookupOpenFoodFactsProductStatus(barcode: string): Promise<OpenFoodFactsLookupStatus> {
   const cleanBarcode = barcode.trim();
 
   if (!cleanBarcode) {
-    return null;
+    return { status: "not_found" };
   }
 
   return getCachedOpenFoodFactsValue(`product:${cleanBarcode}`, () => fetchOpenFoodFactsProduct(cleanBarcode), {
-    cacheTtlMs: (value) => (value ? OFF_PRODUCT_CACHE_TTL_MS : OFF_NEGATIVE_CACHE_TTL_MS),
-    fallbackValue: null,
+    cacheTtlMs: (value) => {
+      if (value.status === "found") {
+        return OFF_PRODUCT_CACHE_TTL_MS;
+      }
+
+      return value.status === "not_found" ? OFF_NEGATIVE_CACHE_TTL_MS : OFF_ERROR_CACHE_TTL_MS;
+    },
+    fallbackValue: { status: "error" },
     errorTtlMs: OFF_ERROR_CACHE_TTL_MS,
     logContext: "Open Food Facts product lookup failed"
   });
@@ -169,16 +190,19 @@ async function fetchOpenFoodFactsProduct(cleanBarcode: string) {
   });
 
   if (!response.ok) {
-    return null;
+    return { status: "error" as const };
   }
 
   const payload = (await response.json()) as OpenFoodFactsApiResponse;
 
   if (payload.status !== 1 || !payload.product) {
-    return null;
+    return { status: "not_found" as const };
   }
 
-  return mapOffProduct(payload.product, cleanBarcode);
+  return {
+    status: "found" as const,
+    product: mapOffProduct(payload.product, cleanBarcode)
+  };
 }
 
 async function fetchOpenFoodFactsSearch(params: URLSearchParams, pageSize: number) {

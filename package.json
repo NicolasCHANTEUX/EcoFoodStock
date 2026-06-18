@@ -15,7 +15,9 @@
     "preview:mobile": "node scripts/run-next.mjs build && node scripts/run-next.mjs start -H 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --require ./scripts/register-ts-tests.cjs --test tests/domain.test.ts tests/security-rpc.test.ts"
+    "test": "node --require ./scripts/register-ts-tests.cjs --test tests/domain.test.ts tests/security-rpc.test.ts",
+    "test:integration:supabase": "node --require ./scripts/register-ts-tests.cjs --test tests/supabase-integration.test.ts",
+    "test:all": "npm run test && npm run test:integration:supabase"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

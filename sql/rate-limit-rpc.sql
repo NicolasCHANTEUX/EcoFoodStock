@@ -32,7 +32,7 @@ create or replace function public.check_rate_limit(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_now timestamptz := clock_timestamp();
@@ -67,8 +67,10 @@ begin
   v_subject_hash := encode(digest(btrim(p_subject), 'sha256'), 'hex');
   v_rate_key := p_scope || ':' || v_subject_hash;
 
-  delete from public.rate_limits
-  where expires_at < v_now - interval '5 minutes';
+  if random() < 0.01 then
+    delete from public.rate_limits
+    where expires_at < v_now - interval '5 minutes';
+  end if;
 
   loop
     select attempts, window_start
