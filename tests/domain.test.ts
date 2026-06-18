@@ -5,6 +5,7 @@ import { planInventoryBatchConsumption } from "@/lib/inventory-actions";
 import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lines";
 import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
 import { getClientIp } from "@/lib/rate-limit";
+import { createLogRecord, getOrCreateRequestId, sanitizeLogContext } from "@/lib/observability/logger";
 import {
   SETTINGS_PROFILE_STORAGE_KEY,
   readStoredSettingsProfile,
@@ -202,6 +203,44 @@ test("rate limit client IP strategy only trusts configured proxy headers", () =>
     restoreEnvValue("VERCEL", originalVercel);
     restoreEnvValue("VERCEL_ENV", originalVercelEnv);
   }
+});
+
+test("structured logs redact sensitive fields and keep correlation metadata", () => {
+  const circular: Record<string, unknown> = { value: "safe" };
+  circular.self = circular;
+
+  const sanitized = sanitizeLogContext({
+    requestId: "request_12345678",
+    route: "/api/settings",
+    userId: "user-123",
+    password: "not-for-logs",
+    nested: {
+      authorization: "Bearer secret",
+      circular
+    }
+  });
+
+  assert.equal(sanitized.password, "[REDACTED]");
+  assert.deepEqual(sanitized.nested, {
+    authorization: "[REDACTED]",
+    circular: { value: "safe", self: "[CIRCULAR]" }
+  });
+
+  const record = createLogRecord({
+    level: "error",
+    event: "Settings Save Failed",
+    message: "Database unavailable",
+    context: sanitized,
+    error: new Error("connection refused"),
+    now: new Date("2026-06-18T12:00:00.000Z")
+  });
+
+  assert.equal(record.event, "settings_save_failed");
+  assert.equal(record.requestId, "request_12345678");
+  assert.equal(record.timestamp, "2026-06-18T12:00:00.000Z");
+  assert.equal(record.error?.message, "connection refused");
+  assert.equal(getOrCreateRequestId("request_abcdefgh"), "request_abcdefgh");
+  assert.match(getOrCreateRequestId("invalid id"), /^[0-9a-f-]{36}$/);
 });
 
 class MemoryStorage {

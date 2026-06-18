@@ -157,11 +157,56 @@ test("sensitive API routes use the distributed rate limiter", () => {
 
 test("CI builds Next.js and pins the Supabase CLI version", () => {
   const ciWorkflow = readProjectFile(".github/workflows/ci.yml");
+  const dependabotConfig = readProjectFile(".github/dependabot.yml");
+  const dependencyAuditWorkflow = readProjectFile(".github/workflows/dependency-audit.yml");
 
   assertIncludes(ciWorkflow, "- name: Build\n        run: npm run build", "CI workflow");
+  assertIncludes(ciWorkflow, "npm audit --omit=dev --audit-level=high", "CI workflow");
+  assertIncludes(ciWorkflow, "node-version: 24", "CI workflow");
+  assertNotIncludes(ciWorkflow, "node-version: 20", "CI workflow");
   assertIncludes(ciWorkflow, "uses: supabase/setup-cli@v2", "CI workflow");
   assertIncludes(ciWorkflow, "version: 2.107.0", "CI workflow");
   assertNotIncludes(ciWorkflow, "version: latest", "CI workflow");
+  assertIncludes(ciWorkflow, "name: Playwright E2E", "CI workflow");
+  assertIncludes(ciWorkflow, "npx playwright install --with-deps chromium", "CI workflow");
+  assertIncludes(ciWorkflow, "run: npm run test:e2e", "CI workflow");
+  assertIncludes(dependabotConfig, "package-ecosystem: npm", "Dependabot config");
+  assertIncludes(dependabotConfig, "package-ecosystem: github-actions", "Dependabot config");
+  assertIncludes(dependabotConfig, "interval: weekly", "Dependabot config");
+  assertIncludes(dependencyAuditWorkflow, "schedule:", "dependency audit workflow");
+  assertIncludes(dependencyAuditWorkflow, "workflow_dispatch:", "dependency audit workflow");
+  assertIncludes(dependencyAuditWorkflow, "npm audit --omit=dev --audit-level=high", "dependency audit workflow");
+});
+
+test("production observability captures errors and avoids raw server logs", () => {
+  const instrumentation = readProjectFile("src/instrumentation.ts");
+  const serverConfig = readProjectFile("src/sentry.server.config.ts");
+  const clientConfig = readProjectFile("src/instrumentation-client.ts");
+  const logger = readProjectFile("src/lib/observability/logger.ts");
+
+  assertIncludes(instrumentation, "Sentry.captureRequestError", "Sentry instrumentation");
+  assertIncludes(serverConfig, "sendDefaultPii: false", "Sentry server config");
+  assertIncludes(clientConfig, "sendDefaultPii: false", "Sentry client config");
+  assertIncludes(logger, "SENSITIVE_KEY_PATTERN", "structured logger");
+  assertIncludes(logger, "Sentry.captureException", "structured logger");
+  assertIncludes(logger, "JSON.stringify(record)", "structured logger");
+
+  const rawConsoleFiles = [
+    "src/services/inventory-service.ts",
+    "src/services/shopping-service.ts",
+    "src/services/household-invitations-service.ts",
+    "src/services/activity-undo-service.ts",
+    "src/lib/rate-limit.ts",
+    "src/lib/open-food-facts.ts",
+    "src/app/api/auth/signup/route.ts",
+    "src/app/api/account/delete/route.ts",
+    "src/app/api/images/route.ts",
+    "src/app/api/settings/route.ts"
+  ];
+
+  for (const routePath of rawConsoleFiles) {
+    assertNotIncludes(readProjectFile(routePath), "console.", routePath);
+  }
 });
 
 test("image proxy has bounded upstream fetches, CDN caching and miss-only rate limits", () => {

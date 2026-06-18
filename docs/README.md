@@ -19,3 +19,7 @@ Ce dossier regroupe les documents projet qui ne sont pas le README principal.
 - `../README.md` : entree principale du projet.
 - `../supabase/README.md` : migrations, Supabase locale et tests d'integration.
 - `../schema-bdd-ecofoodstock.sql` : schema SQL de reference historique.
+
+## Exploitation
+
+- `observabilite-production.md` : logs JSON, Sentry, alertes et audit regulier des dependances.

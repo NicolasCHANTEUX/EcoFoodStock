@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRequestLogContext, logWarn } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 
 const ALLOWED_HOSTS = new Set(["images.openfoodfacts.org", "static.openfoodfacts.org", "images.openfoodfacts.net"]);
@@ -109,7 +110,8 @@ export async function GET(req: Request) {
   } catch (error) {
     const imageError = normalizeImageProxyError(error);
 
-    console.warn("image proxy fetch failed", {
+    logWarn("image_proxy.fetch_failed", "Open Food Facts image fetch failed", {
+      ...getRequestLogContext(req, "/api/images"),
       url: cacheKey,
       status: imageError.status,
       error: error instanceof Error ? error.message : String(error)

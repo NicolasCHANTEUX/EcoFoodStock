@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 import { apiResult, isMissingRpcError, isRecord, type ApiResult } from "@/lib/api/responses";
+import { logError } from "@/lib/observability/logger";
 
 type SupabaseServerClient = ReturnType<typeof createSupabaseServerClient>;
 
@@ -33,9 +34,9 @@ export async function createHouseholdInvitation(
   });
 
   if (error) {
-    console.error("create_invitation_token rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("household.invitation_create_rpc_failed", new Error(error.message), {
+      operation: "create_invitation_token",
+      code: error.code
     });
 
     return apiResult(
@@ -49,7 +50,10 @@ export async function createHouseholdInvitation(
   }
 
   if (!isRecord<HouseholdInvitationRpcBody>(data)) {
-    console.error("create_invitation_token rpc returned an unexpected payload", data);
+    logError("household.invitation_create_invalid_payload", new Error("Invitation RPC returned an invalid payload"), {
+      operation: "create_invitation_token",
+      payloadType: typeof data
+    });
     return apiResult({ error: "Reponse d'invitation invalide" }, 500);
   }
 
@@ -69,9 +73,9 @@ export async function joinHouseholdWithInvitation(
   });
 
   if (error) {
-    console.error("join_household_with_invitation rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("household.invitation_join_rpc_failed", new Error(error.message), {
+      operation: "join_household_with_invitation",
+      code: error.code
     });
 
     return apiResult(
@@ -85,7 +89,10 @@ export async function joinHouseholdWithInvitation(
   }
 
   if (!isRecord<HouseholdInvitationRpcBody>(data)) {
-    console.error("join_household_with_invitation rpc returned an unexpected payload", data);
+    logError("household.invitation_join_invalid_payload", new Error("Invitation join RPC returned an invalid payload"), {
+      operation: "join_household_with_invitation",
+      payloadType: typeof data
+    });
     return apiResult({ error: "Reponse de rattachement invalide" }, 500);
   }
 

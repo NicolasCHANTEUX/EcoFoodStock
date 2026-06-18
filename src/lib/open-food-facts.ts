@@ -1,3 +1,5 @@
+import { logWarn } from "@/lib/observability/logger";
+
 export type OpenFoodFactsLookupResult = {
   barcode: string;
   name: string;
@@ -243,7 +245,10 @@ function getCachedOpenFoodFactsValue<T>(key: string, loadValue: () => Promise<T>
       })
       .catch((error) => {
         entry.expiresAt = Date.now() + options.errorTtlMs;
-        console.warn(options.logContext, error instanceof Error ? error.message : String(error));
+        logWarn("open_food_facts.request_failed", "Open Food Facts request failed", {
+          operation: options.logContext,
+          error: error instanceof Error ? error.message : String(error)
+        });
         return options.fallbackValue;
       })
   };

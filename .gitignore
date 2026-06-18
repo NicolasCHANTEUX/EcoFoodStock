@@ -12,6 +12,9 @@ build/
 
 *.log
 coverage/
+playwright-report/
+test-results/
+blob-report/
 
 .npm-cache/
 .tools/

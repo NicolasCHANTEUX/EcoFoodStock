@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isRecord } from "@/lib/api/responses";
+import { logError } from "@/lib/observability/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const DEFAULT_RATE_LIMIT_MESSAGE = "Trop de requetes. Reessayez dans quelques instants.";
@@ -48,7 +49,7 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
   try {
     supabase = createSupabaseServerClient();
   } catch (error) {
-    console.error("rate limit client unavailable", error);
+    logError("rate_limit.client_unavailable", error, { operation: "create_supabase_client" });
     return createUnavailableDecision();
   }
 
@@ -56,7 +57,7 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
     const normalizedRule = normalizeRateLimitRule(rule);
 
     if (!normalizedRule) {
-      console.error("invalid rate limit rule", { scope: rule.scope });
+      logError("rate_limit.invalid_rule", new Error("Invalid rate limit rule"), { scope: rule.scope });
       return createUnavailableDecision();
     }
 
@@ -68,10 +69,10 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
     });
 
     if (error) {
-      console.error("rate limit rpc failed", {
+      logError("rate_limit.rpc_failed", new Error(error.message), {
+        operation: "check_rate_limit",
         scope: normalizedRule.scope,
-        code: error.code,
-        message: error.message
+        code: error.code
       });
       return createUnavailableDecision();
     }
@@ -79,9 +80,10 @@ export async function checkRateLimits(rules: RateLimitRule[]): Promise<RateLimit
     const payload = parseRpcRateLimitPayload(data);
 
     if (!payload || !payload.ok) {
-      console.error("rate limit rpc returned an invalid payload", {
+      logError("rate_limit.invalid_payload", new Error("Rate limit RPC returned an invalid payload"), {
+        operation: "check_rate_limit",
         scope: normalizedRule.scope,
-        data
+        payloadType: typeof data
       });
       return createUnavailableDecision();
     }

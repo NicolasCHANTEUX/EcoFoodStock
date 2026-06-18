@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
+import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { createSupabasePublicServerClient } from "@/lib/supabase/server";
 
 const DEFAULT_LEGAL_TERMS_VERSION = "2026-06-07";
@@ -89,13 +90,18 @@ export async function POST(request: Request) {
         return createSignupResponse({ needsEmailConfirmation: true, status: 202 });
       }
 
-      console.warn("signup failed", { status: error.status, code: error.code, name: error.name });
+      logWarn("auth.signup_rejected", "Signup request was rejected", {
+        ...getRequestLogContext(request, "/api/auth/signup"),
+        status: error.status,
+        code: error.code,
+        errorName: error.name
+      });
       return NextResponse.json({ error: getPublicSignupError(error.message) }, { status: getPublicSignupStatus(error.status) });
     }
 
     return createSignupResponse({ needsEmailConfirmation: !data.session, status: 201 });
   } catch (error) {
-    console.error("signup unexpected failure", error);
+    logError("auth.signup_unexpected_failure", error, getRequestLogContext(request, "/api/auth/signup"));
     return NextResponse.json({ error: "Impossible de creer le compte pour le moment." }, { status: 500 });
   }
 }

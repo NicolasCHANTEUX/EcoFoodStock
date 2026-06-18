@@ -1,4 +1,5 @@
 import { apiResult, jsonApiResult } from "@/lib/api/responses";
+import { getRequestLogContext, logError } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createHouseholdInvitation } from "@/services/household-invitations-service";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
 
     return jsonApiResult(await createHouseholdInvitation(supabase, { householdId, userId: appUserId }));
   } catch (err: unknown) {
-    console.error("household invite error:", err);
+    logError("household.invite_failed", err, getRequestLogContext(request, "/api/household/invite"));
     return jsonApiResult(apiResult({ error: "Erreur lors de la generation de l'invitation" }, 500));
   }
 }

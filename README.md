@@ -43,7 +43,7 @@ Repousse :
 
 Prerequis :
 
-- Node.js 20 ou plus.
+- Node.js 24 ou plus.
 
 ```bash
 npm install
@@ -113,10 +113,19 @@ Checks techniques :
 npm run typecheck
 npm run lint
 npm test
+npm run test:e2e
 npm run build
 ```
 
 La checklist manuelle complete est dans `docs/mvp1-checklist.md`.
+
+## Observabilite et dependances
+
+- Les erreurs serveur sont journalisees en JSON avec un `requestId` et les champs sensibles masques.
+- Sentry est prepare pour le suivi des erreurs et des traces ; il reste desactive sans `SENTRY_DSN`.
+- La CI et le workflow hebdomadaire bloquent les vulnerabilites de production hautes ou critiques.
+- Dependabot surveille chaque semaine les dependances npm et les GitHub Actions.
+- La configuration production et les alertes recommandees sont documentees dans `docs/observabilite-production.md`.
 
 ## Documents de cadrage
 
@@ -126,4 +135,5 @@ La checklist manuelle complete est dans `docs/mvp1-checklist.md`.
 - `docs/mvp1-checklist.md`
 - `docs/architecture-ecofoodstock.md`
 - `docs/revue-captures-ecrans-ecofoodstock.md`
+- `docs/observabilite-production.md`
 - `schema-bdd-ecofoodstock.sql`

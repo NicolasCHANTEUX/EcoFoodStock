@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "predev": "node scripts/check-node-version.mjs",
@@ -16,10 +16,13 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "node --require ./scripts/register-ts-tests.cjs --test tests/domain.test.ts tests/security-rpc.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "test:integration:supabase": "node --require ./scripts/register-ts-tests.cjs --test tests/supabase-integration.test.ts",
     "test:all": "npm run test && npm run test:integration:supabase"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.42.0",
     "@supabase/supabase-js": "^2.45.0",
     "@zxing/browser": "^0.2.0",
     "clsx": "^2.1.1",
@@ -32,6 +35,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

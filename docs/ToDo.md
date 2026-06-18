@@ -127,7 +127,7 @@ Le code contient maintenant les principaux blocs attendus :
 
 - [ ] Centraliser les libelles UI dans un systeme i18n.
 - [ ] Ajouter tests end-to-end sur les parcours critiques.
-- [ ] Ajouter monitoring d'erreurs production.
+- [x] Ajouter monitoring d'erreurs production (logs JSON + integration Sentry optionnelle ; activation par DSN au deploiement).
 - [ ] Ajouter strategie de cache plus durable si besoin pour Open Food Facts.
 - [ ] Revoir les limites de rate limit selon trafic reel.
 
@@ -157,3 +157,8 @@ Le code contient maintenant les principaux blocs attendus :
 - [x] CI : ajout du build Next.js et pin de Supabase CLI.
 - [x] Tests d'integration supplementaires : undo inventaire, surconsommation concurrente, invitation reutilisee/expiree.
 - [x] Cache image memoire reduit et borne par volume total.
+- [x] Socle Playwright E2E : login, consentement, pages legales, PWA et redirection auth.
+- [x] Dependabot hebdomadaire pour npm et GitHub Actions.
+- [x] Audit CI bloquant sur les vulnerabilites hautes/critiques ; suivi des moderes via Dependabot.
+- [x] Audit des dependances planifie chaque semaine et declenchable manuellement.
+- [x] Observabilite production : logs JSON correles, masquage des secrets, capture Sentry et guide d'alerting.

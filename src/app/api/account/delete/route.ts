@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 
 type HouseholdMembership = {
@@ -32,7 +33,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("delete account error:", error);
+    logError("account.delete_failed", error, getRequestLogContext(request, "/api/account/delete"));
     return NextResponse.json(
       {
         ok: false,
@@ -54,7 +55,11 @@ async function tryDeleteApplicationAccountWithRpc(supabase: SupabaseClient, appU
   }
 
   if (!isMissingRpcError(error.message)) {
-    console.warn("delete_application_account_data rpc failed, falling back to application flow", error.message);
+    logWarn("account.delete_rpc_fallback", "Account deletion RPC failed; using application fallback", {
+      operation: "delete_application_account_data",
+      code: error.code,
+      error: error.message
+    });
   }
 
   return false;

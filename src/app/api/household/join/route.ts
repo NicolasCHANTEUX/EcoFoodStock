@@ -1,4 +1,5 @@
 import { apiResult, jsonApiResult } from "@/lib/api/responses";
+import { getRequestLogContext, logError } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { resolveAccountContext } from "@/lib/supabase/account-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
 
     return jsonApiResult(await joinHouseholdWithInvitation(supabase, { token, userId }));
   } catch (err: unknown) {
-    console.error("household join error:", err);
+    logError("household.join_failed", err, getRequestLogContext(request, "/api/household/join"));
     return jsonApiResult(apiResult({ error: "Erreur lors du rattachement au foyer" }, 500));
   }
 }

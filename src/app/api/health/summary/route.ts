@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRequestLogContext, logError } from "@/lib/observability/logger";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 
 type ProductNutritionRow = {
@@ -163,7 +164,7 @@ export async function GET(req: Request) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("health summary error:", message);
+    logError("health.summary_failed", error, getRequestLogContext(req, "/api/health/summary"));
     return NextResponse.json({ ok: false, message }, { status: 500 });
   }
 }

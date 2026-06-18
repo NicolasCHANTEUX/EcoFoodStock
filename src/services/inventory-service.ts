@@ -1,5 +1,6 @@
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 import { apiResult, isMissingRpcError, isRecord, type ApiResult } from "@/lib/api/responses";
+import { logError } from "@/lib/observability/logger";
 
 type SupabaseServerClient = ReturnType<typeof createSupabaseServerClient>;
 
@@ -50,7 +51,7 @@ export async function createInventoryBatch(
   payload: CreateInventoryBatchInput
 ): Promise<ApiResult<InventoryRpcBody>> {
   const productId = await resolveInventoryProductId(supabase, payload.product).catch((error) => {
-    console.error("product upsert error:", error);
+    logError("inventory.product_upsert_failed", error, { operation: "resolve_inventory_product" });
     return undefined;
   });
 
@@ -73,9 +74,9 @@ export async function createInventoryBatch(
   });
 
   if (error) {
-    console.error("create_inventory_batch_with_activity rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("inventory.create_batch_rpc_failed", new Error(error.message), {
+      operation: "create_inventory_batch_with_activity",
+      code: error.code
     });
 
     return apiResult(
@@ -90,7 +91,10 @@ export async function createInventoryBatch(
   }
 
   if (!isRecord<InventoryRpcBody>(data)) {
-    console.error("create_inventory_batch_with_activity rpc returned an unexpected payload", data);
+    logError("inventory.create_batch_invalid_payload", new Error("Inventory RPC returned an invalid payload"), {
+      operation: "create_inventory_batch_with_activity",
+      payloadType: typeof data
+    });
     return apiResult({ ok: false, message: "Inventory transaction returned an invalid response" }, 500);
   }
 
@@ -112,9 +116,9 @@ export async function applyInventoryAction(
   });
 
   if (error) {
-    console.error("apply_inventory_action rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("inventory.action_rpc_failed", new Error(error.message), {
+      operation: "apply_inventory_action",
+      code: error.code
     });
 
     return apiResult(
@@ -129,7 +133,10 @@ export async function applyInventoryAction(
   }
 
   if (!isRecord<InventoryRpcBody>(data)) {
-    console.error("apply_inventory_action rpc returned an unexpected payload", data);
+    logError("inventory.action_invalid_payload", new Error("Inventory action RPC returned an invalid payload"), {
+      operation: "apply_inventory_action",
+      payloadType: typeof data
+    });
     return apiResult({ ok: false, message: "Inventory action transaction returned an invalid response" }, 500);
   }
 

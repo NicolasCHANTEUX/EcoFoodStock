@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getRequestLogContext, logError } from "@/lib/observability/logger";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -95,7 +96,10 @@ export async function POST(req: Request) {
   );
 
   if (preferencesError) {
-    console.error("settings preferences save failed", preferencesError.message);
+    logError("settings.preferences_save_failed", new Error(preferencesError.message), {
+      ...getRequestLogContext(req, "/api/settings"),
+      operation: "save_user_preferences"
+    });
     return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramètres pour le moment." }, { status: 500 });
   }
 
@@ -112,7 +116,10 @@ export async function POST(req: Request) {
   );
 
   if (healthError) {
-    console.error("settings health profile save failed", healthError.message);
+    logError("settings.health_profile_save_failed", new Error(healthError.message), {
+      ...getRequestLogContext(req, "/api/settings"),
+      operation: "save_health_profile"
+    });
     return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramètres pour le moment." }, { status: 500 });
   }
 
@@ -144,7 +151,10 @@ export async function POST(req: Request) {
     });
 
     if (activityError) {
-      console.error("settings history event creation failed", activityError);
+      logError("settings.history_event_create_failed", activityError, {
+        ...getRequestLogContext(req, "/api/settings"),
+        operation: "create_settings_history_event"
+      });
       return NextResponse.json(
         { ok: false, message: "Paramètres enregistrés, mais l'historique n'a pas pu être mis à jour." },
         { status: 500 }

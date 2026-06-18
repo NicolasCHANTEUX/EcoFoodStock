@@ -1,4 +1,5 @@
 import { apiResult, isMissingRpcError, isRecord, type ApiResult } from "@/lib/api/responses";
+import { logError } from "@/lib/observability/logger";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatQuantity, normalizeQuantityUnit } from "@/lib/units";
 import type { ShoppingGroup } from "@/types/domain";
@@ -173,9 +174,9 @@ async function applyShoppingAction(
   });
 
   if (error) {
-    console.error("apply_shopping_action rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("shopping.action_rpc_failed", new Error(error.message), {
+      operation: "apply_shopping_action",
+      code: error.code
     });
 
     return apiResult(
@@ -190,7 +191,10 @@ async function applyShoppingAction(
   }
 
   if (!isRecord<ShoppingRpcBody>(data)) {
-    console.error("apply_shopping_action rpc returned an unexpected payload", data);
+    logError("shopping.action_invalid_payload", new Error("Shopping RPC returned an invalid payload"), {
+      operation: "apply_shopping_action",
+      payloadType: typeof data
+    });
     return apiResult({ ok: false, message: "Shopping transaction returned an invalid response" }, 500);
   }
 

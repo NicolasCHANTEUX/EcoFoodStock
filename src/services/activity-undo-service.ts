@@ -1,5 +1,6 @@
 import { buildActivityEventInsert } from "@/lib/activity-events";
 import { apiResult, isMissingRpcError, isRecord, type ApiResult } from "@/lib/api/responses";
+import { logError } from "@/lib/observability/logger";
 import { userBelongsToHousehold } from "@/lib/supabase/account-context";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -46,7 +47,7 @@ export async function resolveUndoableActivityEvent(
 
   if (error || !event) {
     if (error) {
-      console.error("undo event lookup failed", error.message);
+      logError("history.undo_event_lookup_failed", new Error(error.message), { operation: "load_activity_event" });
     }
 
     return { ok: false, result: apiResult({ ok: false, message: "Event not found" }, 404) };
@@ -85,9 +86,9 @@ export async function undoInventoryEventWithRpc(
   });
 
   if (error) {
-    console.error("undo_activity_event rpc failed", {
-      code: error.code,
-      message: error.message
+    logError("history.undo_rpc_failed", new Error(error.message), {
+      operation: "undo_activity_event",
+      code: error.code
     });
 
     return apiResult(
@@ -106,7 +107,10 @@ export async function undoInventoryEventWithRpc(
   }
 
   if (!isRecord<UndoRpcBody>(data)) {
-    console.error("undo_activity_event rpc returned an unexpected payload", data);
+    logError("history.undo_invalid_payload", new Error("Undo RPC returned an invalid payload"), {
+      operation: "undo_activity_event",
+      payloadType: typeof data
+    });
     return apiResult({ ok: false, message: "Undo transaction returned an invalid response" }, 500);
   }
 
@@ -135,7 +139,11 @@ export async function undoSettingsEvent(
     .maybeSingle<{ id: string }>();
 
   if (undoEventError || !undoEvent?.id) {
-    console.error("settings undo event creation failed", undoEventError?.message);
+    logError(
+      "history.settings_undo_event_create_failed",
+      new Error(undoEventError?.message ?? "Undo event was not created"),
+      { operation: "create_settings_undo_event" }
+    );
     return apiResult({ ok: false, message: "Unable to undo settings event" }, 500);
   }
 
@@ -145,7 +153,9 @@ export async function undoSettingsEvent(
     .eq("id", event.id);
 
   if (markUndoneError) {
-    console.error("settings undo mark original event failed", markUndoneError.message);
+    logError("history.settings_undo_mark_failed", new Error(markUndoneError.message), {
+      operation: "mark_settings_event_undone"
+    });
     await supabase.from("activity_events").delete().eq("id", undoEvent.id);
     return apiResult({ ok: false, message: "Unable to undo settings event" }, 500);
   }
