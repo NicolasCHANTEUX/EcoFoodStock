@@ -112,29 +112,18 @@ Checks techniques :
 ```bash
 npm run typecheck
 npm run lint
+npm test
 npm run build
 ```
 
-Checklist manuelle :
-
-- inscription ;
-- connexion (email + Google) ;
-- onboarding ;
-- ajout manuel ;
-- recherche Open Food Facts (code-barres) ;
-- scan camera ;
-- ajout au stock ;
-- reduction / consommation / jet ;
-- historique ;
-- annulation ;
-- liste de courses ;
-- finalisation des courses ;
-- affichage mobile des modales.
-
+La checklist manuelle complete est dans `docs/mvp1-checklist.md`.
 
 ## Documents de cadrage
 
-- `architecture-ecofoodstock.md`
-- `cadrage-mvp-ecofoodstock.md`
-- `revue-captures-ecrans-ecofoodstock.md`
+- `docs/README.md`
+- `docs/cadrage-mvp-ecofoodstock.md`
+- `docs/ToDo.md`
+- `docs/mvp1-checklist.md`
+- `docs/architecture-ecofoodstock.md`
+- `docs/revue-captures-ecrans-ecofoodstock.md`
 - `schema-bdd-ecofoodstock.sql`
