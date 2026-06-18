@@ -22,7 +22,7 @@
     "test:all": "npm run test && npm run test:integration:supabase"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.42.0",
+    "@sentry/nextjs": "^10.58.0",
     "@supabase/supabase-js": "^2.45.0",
     "@zxing/browser": "^0.2.0",
     "clsx": "^2.1.1",

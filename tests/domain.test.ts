@@ -239,6 +239,14 @@ test("structured logs redact sensitive fields and keep correlation metadata", ()
   assert.equal(record.requestId, "request_12345678");
   assert.equal(record.timestamp, "2026-06-18T12:00:00.000Z");
   assert.equal(record.error?.message, "connection refused");
+  assert.equal(
+    createLogRecord({
+      level: "error",
+      event: "auth.failure",
+      message: "Failure for person@example.com with Bearer abc.def.ghi"
+    }).message,
+    "Failure for [REDACTED_EMAIL] with Bearer [REDACTED]"
+  );
   assert.equal(getOrCreateRequestId("request_abcdefgh"), "request_abcdefgh");
   assert.match(getOrCreateRequestId("invalid id"), /^[0-9a-f-]{36}$/);
 });

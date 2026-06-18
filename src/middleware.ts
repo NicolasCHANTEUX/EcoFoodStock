@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getOrCreateRequestId } from "@/lib/observability/logger";
+import { getOrCreateRequestId } from "@/lib/observability/request-id";
 
 export function middleware(request: NextRequest) {
   const requestId = getOrCreateRequestId(request.headers.get("x-request-id"));

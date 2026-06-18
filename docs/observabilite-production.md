@@ -48,7 +48,7 @@ SENTRY_AUTH_TOKEN=<token CI secret>
 
 `SENTRY_AUTH_TOKEN` doit rester un secret du fournisseur de CI/deploiement et ne doit jamais etre expose au navigateur ou commite.
 
-La collecte PII par defaut est desactivee. Les replays de session ne sont pas actives, afin de limiter la collecte sur une application qui manipule des donnees personnelles et de sante.
+La collecte PII par defaut est desactivee. Les replays de session ne sont pas actives, afin de limiter la collecte sur une application qui manipule des donnees personnelles et de sante. Le DSN navigateur est une cle publique d'ingestion ; le token prive `SENTRY_AUTH_TOKEN` reste exclusivement cote CI.
 
 ## Alertes recommandees
 

@@ -187,6 +187,7 @@ test("production observability captures errors and avoids raw server logs", () =
   assertIncludes(instrumentation, "Sentry.captureRequestError", "Sentry instrumentation");
   assertIncludes(serverConfig, "sendDefaultPii: false", "Sentry server config");
   assertIncludes(clientConfig, "sendDefaultPii: false", "Sentry client config");
+  assertIncludes(clientConfig, "beforeSend: scrubEvent", "Sentry client config");
   assertIncludes(logger, "SENSITIVE_KEY_PATTERN", "structured logger");
   assertIncludes(logger, "Sentry.captureException", "structured logger");
   assertIncludes(logger, "JSON.stringify(record)", "structured logger");

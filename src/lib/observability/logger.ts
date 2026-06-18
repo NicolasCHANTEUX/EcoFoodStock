@@ -1,4 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
+import { getOrCreateRequestId } from "@/lib/observability/request-id";
+
+export { getOrCreateRequestId } from "@/lib/observability/request-id";
 
 const SERVICE_NAME = "ecofoodstock";
 const MAX_STRING_LENGTH = 2_000;
@@ -40,16 +43,6 @@ export function getRequestLogContext(request: Request, route: string): LogContex
     route,
     method: request.method
   };
-}
-
-export function getOrCreateRequestId(candidate?: string | null) {
-  const normalized = candidate?.trim();
-
-  if (normalized && /^[a-zA-Z0-9_-]{8,128}$/.test(normalized)) {
-    return normalized;
-  }
-
-  return crypto.randomUUID();
 }
 
 export function sanitizeLogContext(context: LogContext): Record<string, unknown> {
@@ -199,11 +192,15 @@ function serializeError(error: unknown) {
 }
 
 function toError(error: unknown, fallbackMessage: string) {
-  if (error instanceof Error) {
-    return error;
+  const safeError = serializeError(error instanceof Error || typeof error === "string" ? error : fallbackMessage);
+  const normalizedError = new Error(safeError.message);
+  normalizedError.name = safeError.name;
+
+  if (safeError.stack) {
+    normalizedError.stack = safeError.stack;
   }
 
-  return new Error(typeof error === "string" ? error : fallbackMessage);
+  return normalizedError;
 }
 
 function normalizeEventName(event: string) {
@@ -212,5 +209,13 @@ function normalizeEventName(event: string) {
 }
 
 function truncate(value: string) {
-  return value.length <= MAX_STRING_LENGTH ? value : `${value.slice(0, MAX_STRING_LENGTH)}...[TRUNCATED]`;
+  const redacted = value
+    .replace(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi, "[REDACTED_EMAIL]")
+    .replace(/\bBearer\s+[a-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[REDACTED_JWT]")
+    .replace(/([?&](?:token|key|secret|password)=)[^&\s]+/gi, "$1[REDACTED]");
+
+  return redacted.length <= MAX_STRING_LENGTH
+    ? redacted
+    : `${redacted.slice(0, MAX_STRING_LENGTH)}...[TRUNCATED]`;
 }
