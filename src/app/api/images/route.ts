@@ -7,7 +7,8 @@ const IMAGE_FETCH_TIMEOUT_MS = 5_000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_MEMORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const IMAGE_ERROR_CACHE_TTL_MS = 2 * 60 * 1000;
-const MAX_CACHED_IMAGES = 120;
+const MAX_CACHED_IMAGES = 40;
+const MAX_IMAGE_CACHE_BYTES = 60 * 1024 * 1024;
 const IMAGE_RATE_LIMIT_WINDOW_SECONDS = 10 * 60;
 const IMAGE_BROWSER_CACHE_SECONDS = 24 * 60 * 60;
 const IMAGE_CDN_CACHE_SECONDS = 30 * 24 * 60 * 60;
@@ -261,7 +262,7 @@ function setCachedImage(key: string, value: CachedImage) {
   imageCache.delete(key);
   imageCache.set(key, value);
 
-  while (imageCache.size > MAX_CACHED_IMAGES) {
+  while (imageCache.size > MAX_CACHED_IMAGES || getImageCacheByteLength() > MAX_IMAGE_CACHE_BYTES) {
     const oldestKey = imageCache.keys().next().value;
 
     if (!oldestKey) {
@@ -270,6 +271,18 @@ function setCachedImage(key: string, value: CachedImage) {
 
     imageCache.delete(oldestKey);
   }
+}
+
+function getImageCacheByteLength() {
+  let byteLength = 0;
+
+  for (const cachedImage of imageCache.values()) {
+    if (cachedImage.kind === "image") {
+      byteLength += cachedImage.body.byteLength;
+    }
+  }
+
+  return byteLength;
 }
 
 function secondsUntilCacheExpiry(cachedImage: Extract<CachedImage, { kind: "error" }>) {

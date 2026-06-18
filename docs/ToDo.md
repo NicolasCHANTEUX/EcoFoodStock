@@ -154,3 +154,6 @@ Le code contient maintenant les principaux blocs attendus :
 - [x] Correction `pgcrypto` / `digest(...)` pour la RPC rate limit.
 - [x] Tests securite/RPC.
 - [x] Harnais d'integration Supabase locale.
+- [x] CI : ajout du build Next.js et pin de Supabase CLI.
+- [x] Tests d'integration supplementaires : undo inventaire, surconsommation concurrente, invitation reutilisee/expiree.
+- [x] Cache image memoire reduit et borne par volume total.

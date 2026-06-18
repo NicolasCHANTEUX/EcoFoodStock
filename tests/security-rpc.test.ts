@@ -155,10 +155,21 @@ test("sensitive API routes use the distributed rate limiter", () => {
   assertNotIncludes(signupRoute, "new Map<string, number[]>", "signup route");
 });
 
+test("CI builds Next.js and pins the Supabase CLI version", () => {
+  const ciWorkflow = readProjectFile(".github/workflows/ci.yml");
+
+  assertIncludes(ciWorkflow, "- name: Build\n        run: npm run build", "CI workflow");
+  assertIncludes(ciWorkflow, "uses: supabase/setup-cli@v2", "CI workflow");
+  assertIncludes(ciWorkflow, "version: 2.107.0", "CI workflow");
+  assertNotIncludes(ciWorkflow, "version: latest", "CI workflow");
+});
+
 test("image proxy has bounded upstream fetches, CDN caching and miss-only rate limits", () => {
   const imageRoute = readProjectFile("src/app/api/images/route.ts");
 
   assertIncludes(imageRoute, "const IMAGE_FETCH_TIMEOUT_MS = 5_000", "image proxy");
+  assertIncludes(imageRoute, "const MAX_CACHED_IMAGES = 40", "image proxy");
+  assertIncludes(imageRoute, "MAX_IMAGE_CACHE_BYTES", "image proxy");
   assertIncludes(imageRoute, "readLimitedImageBody", "image proxy");
   assertIncludes(imageRoute, "MAX_IMAGE_BYTES", "image proxy");
   assertIncludes(imageRoute, "redirect: \"manual\"", "image proxy");

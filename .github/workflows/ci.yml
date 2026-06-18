@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Typecheck, test and lint
+    name: Typecheck, test, lint and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -39,6 +39,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Build
+        run: npm run build
+
   supabase-integration:
     name: Supabase integration
     needs: checks
@@ -59,9 +62,9 @@ jobs:
         run: npm ci
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.107.0
 
       - name: Start Supabase
         run: supabase start

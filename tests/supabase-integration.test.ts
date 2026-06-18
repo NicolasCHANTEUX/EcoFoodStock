@@ -144,6 +144,92 @@ test("inventory RPC creates stock movement atomically and rejects wrong househol
   assert.ok(forbiddenBatch.error, "non-member user must not create stock through service_role RPC");
 });
 
+test("inventory RPC prevents concurrent over-consumption and undo restores stock", async () => {
+  const fixture = await createIntegrationFixture();
+  const createdBatch = await serviceRoleClient.rpc("create_inventory_batch_with_activity", {
+    p_household_id: fixture.household.id,
+    p_user_id: fixture.owner.id,
+    p_product_id: fixture.product.id,
+    p_product_name: "Pates integration",
+    p_quantity: 1,
+    p_unit: "pieces",
+    p_storage_area: "dry",
+    p_expiration_date: null,
+    p_notes: null,
+    p_source: "manual"
+  });
+
+  assertNoSupabaseError(createdBatch.error, "create batch before concurrent consumption");
+  assert.equal(createdBatch.data?.ok, true);
+
+  const consumePayload = {
+    p_household_id: fixture.household.id,
+    p_user_id: fixture.owner.id,
+    p_product_id: fixture.product.id,
+    p_action: "consume",
+    p_quantity: 1,
+    p_storage_area: "dry",
+    p_unit: "pieces"
+  };
+
+  const [firstConsumption, secondConsumption] = await Promise.all([
+    serviceRoleClient.rpc("apply_inventory_action", consumePayload),
+    serviceRoleClient.rpc("apply_inventory_action", consumePayload)
+  ]);
+
+  assertNoSupabaseError(firstConsumption.error, "first concurrent inventory action");
+  assertNoSupabaseError(secondConsumption.error, "second concurrent inventory action");
+
+  const consumptionResults = [firstConsumption.data, secondConsumption.data];
+  const successfulConsumptions = consumptionResults.filter((result) => result?.ok === true);
+  const rejectedConsumptions = consumptionResults.filter((result) => result?.ok === false);
+
+  assert.equal(successfulConsumptions.length, 1);
+  assert.equal(rejectedConsumptions.length, 1);
+  assert.ok([404, 409].includes(Number(rejectedConsumptions[0]?.status)));
+
+  const consumedEventId = successfulConsumptions[0]?.activityEventId;
+  assert.equal(typeof consumedEventId, "string");
+
+  const stockAfterConsume = await serviceRoleClient
+    .from("inventory_batches")
+    .select("quantity_remaining, status")
+    .eq("household_id", fixture.household.id)
+    .eq("product_id", fixture.product.id)
+    .maybeSingle<{ quantity_remaining: number; status: string }>();
+
+  assertNoSupabaseError(stockAfterConsume.error, "stock after concurrent consume select");
+  assert.equal(Number(stockAfterConsume.data?.quantity_remaining), 0);
+  assert.equal(stockAfterConsume.data?.status, "consumed");
+
+  const undone = await serviceRoleClient.rpc("undo_activity_event", {
+    p_event_id: consumedEventId,
+    p_user_id: fixture.owner.id
+  });
+
+  assertNoSupabaseError(undone.error, "undo consumed event");
+  assert.equal(undone.data?.ok, true);
+  assert.ok(undone.data?.undoneEventId);
+
+  const stockAfterUndo = await serviceRoleClient
+    .from("inventory_batches")
+    .select("quantity_remaining, status")
+    .eq("household_id", fixture.household.id)
+    .eq("product_id", fixture.product.id)
+    .maybeSingle<{ quantity_remaining: number; status: string }>();
+
+  assertNoSupabaseError(stockAfterUndo.error, "stock after undo select");
+  assert.equal(Number(stockAfterUndo.data?.quantity_remaining), 1);
+  assert.equal(stockAfterUndo.data?.status, "active");
+
+  const secondUndo = await serviceRoleClient.rpc("undo_activity_event", {
+    p_event_id: consumedEventId,
+    p_user_id: fixture.owner.id
+  });
+
+  assert.ok(secondUndo.error, "same inventory event must not be undone twice");
+});
+
 test("shopping RPC mutates list in one transaction and writes completion history", async () => {
   const fixture = await createIntegrationFixture();
   const addedItem = await serviceRoleClient.rpc("apply_shopping_action", {
@@ -265,6 +351,35 @@ test("invitation RPC joins a user atomically and consumes the token", async () =
   assertNoSupabaseError(consumedToken.error, "consumed token select");
   assert.ok(consumedToken.data?.consumed_at);
   assert.equal(consumedToken.data?.consumed_by, fixture.outsider.id);
+
+  const secondOutsider = await createAppUser("second-outsider");
+  const reusedToken = await serviceRoleClient.rpc("join_household_with_invitation", {
+    p_token: token,
+    p_user_id: secondOutsider.id
+  });
+
+  assertNoSupabaseError(reusedToken.error, "join_household_with_invitation reused token");
+  assert.equal(reusedToken.data?.ok, false);
+  assert.equal(reusedToken.data?.status, 410);
+
+  const expiredToken = `expired-${randomUUID()}`;
+  const expiredInvite = await serviceRoleClient.from("invitation_tokens").insert({
+    token: expiredToken,
+    household_id: fixture.household.id,
+    created_by: fixture.owner.id,
+    expires_at: new Date(Date.now() - 60 * 1000).toISOString()
+  });
+
+  assertNoSupabaseError(expiredInvite.error, "expired invitation insert");
+
+  const expiredJoin = await serviceRoleClient.rpc("join_household_with_invitation", {
+    p_token: expiredToken,
+    p_user_id: secondOutsider.id
+  });
+
+  assertNoSupabaseError(expiredJoin.error, "join_household_with_invitation expired token");
+  assert.equal(expiredJoin.data?.ok, false);
+  assert.equal(expiredJoin.data?.status, 410);
 });
 
 async function createIntegrationFixture(): Promise<IntegrationFixture> {
