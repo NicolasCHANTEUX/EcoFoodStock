@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRequestLogContext, logError } from "@/lib/observability/logger";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -80,6 +81,31 @@ export async function POST(req: Request) {
 
   const { context, householdId, supabase } = access;
   const appUserId = context.appUserId!;
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "settings_update:ip",
+      subject: rateLimitSubject(getClientIp(req)),
+      limit: 60,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "settings_update:user",
+      subject: rateLimitSubject(appUserId),
+      limit: 30,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "settings_update:household",
+      subject: rateLimitSubject(householdId),
+      limit: 120,
+      windowSeconds: 10 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
+
   const previousProfile = await loadSettingsProfile(supabase, appUserId);
   const profile = normalizeProfile(parsedPayload.data);
   const changedFields = getChangedSettingsFields(previousProfile, profile);

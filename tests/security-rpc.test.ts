@@ -134,6 +134,9 @@ test("distributed rate limit RPC hashes subjects and locks counters", () => {
 
 test("sensitive API routes use the distributed rate limiter", () => {
   const routeChecks = [
+    "src/app/api/account/delete/route.ts",
+    "src/app/api/account/export/route.ts",
+    "src/app/api/account/legal-consent/route.ts",
     "src/app/api/auth/signup/route.ts",
     "src/app/api/products/lookup/[barcode]/route.ts",
     "src/app/api/images/route.ts",
@@ -141,6 +144,8 @@ test("sensitive API routes use the distributed rate limiter", () => {
     "src/app/api/household/join/route.ts",
     "src/app/api/inventory/actions/route.ts",
     "src/app/api/inventory/batches/route.ts",
+    "src/app/api/onboarding/complete/route.ts",
+    "src/app/api/settings/route.ts",
     "src/app/api/shopping/route.ts"
   ];
 
@@ -153,6 +158,47 @@ test("sensitive API routes use the distributed rate limiter", () => {
   const signupRoute = readProjectFile("src/app/api/auth/signup/route.ts");
   assertNotIncludes(signupRoute, "signupAttempts", "signup route");
   assertNotIncludes(signupRoute, "new Map<string, number[]>", "signup route");
+});
+
+test("high-risk account routes use server-owned legal consent and generic client errors", () => {
+  const signupRoute = readProjectFile("src/app/api/auth/signup/route.ts");
+  const legalConsentRoute = readProjectFile("src/app/api/account/legal-consent/route.ts");
+  const deleteRoute = readProjectFile("src/app/api/account/delete/route.ts");
+  const onboardingRoute = readProjectFile("src/app/api/onboarding/complete/route.ts");
+  const householdAccess = readProjectFile("src/lib/supabase/household-access.ts");
+
+  assertIncludes(signupRoute, "CURRENT_LEGAL_TERMS_VERSION", "signup legal consent");
+  assertIncludes(signupRoute, "CURRENT_PRIVACY_POLICY_VERSION", "signup legal consent");
+  assertIncludes(signupRoute, "APP_BASE_URL is required in production", "signup redirect");
+  assertNotIncludes(signupRoute, "payload.legalTermsVersion", "signup legal consent");
+  assertNotIncludes(signupRoute, "payload.privacyPolicyVersion", "signup legal consent");
+  assertNotIncludes(signupRoute, "new URL(request.url).origin);", "signup redirect");
+
+  assertIncludes(legalConsentRoute, "accepted: z.literal(true)", "legal consent route");
+  assertIncludes(legalConsentRoute, "const acceptedAt = new Date().toISOString()", "legal consent route");
+  assertIncludes(legalConsentRoute, "const legalTermsVersion = CURRENT_LEGAL_TERMS_VERSION", "legal consent route");
+  assertNotIncludes(legalConsentRoute, "body?.acceptedAt", "legal consent route");
+  assertNotIncludes(legalConsentRoute, "body?.legalTermsVersion", "legal consent route");
+  assertNotIncludes(legalConsentRoute, "authError.message },", "legal consent route");
+  assertNotIncludes(legalConsentRoute, "userError.message },", "legal consent route");
+
+  assertIncludes(deleteRoute, "confirmation", "delete account route");
+  assertIncludes(deleteRoute, "z.literal(\"supprimer\")", "delete account route");
+  assertNotIncludes(deleteRoute, "error: error instanceof Error", "delete account route");
+  assertNotIncludes(onboardingRoute, "String(error) },", "onboarding route");
+  assertNotIncludes(householdAccess, "String(error) },", "household access");
+});
+
+test("inventory batch creation validates bounded product fields", () => {
+  const inventoryBatchRoute = readProjectFile("src/app/api/inventory/batches/route.ts");
+
+  assertIncludes(inventoryBatchRoute, "z.string().uuid().optional()", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "z.string().regex(/^\\d{6,18}$/).optional()", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "name: z.string().trim().min(1).max(200)", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "z.string().url().max(500)", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "source: z.enum([\"manual\", \"scan\", \"open_food_facts\"]).optional()", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "quantity: z.coerce.number().positive().max(100_000)", "inventory batch validation");
+  assertIncludes(inventoryBatchRoute, "notes: nullableText(1_000)", "inventory batch validation");
 });
 
 test("CI builds Next.js and pins the Supabase CLI version", () => {

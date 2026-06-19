@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getRequestLogContext, logWarn } from "@/lib/observability/logger";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 
 type ExportRow = {
@@ -17,17 +19,43 @@ export async function GET(request: Request) {
 
   const { context, supabase } = access;
   const appUserId = context.appUserId!;
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "account_export:ip",
+      subject: rateLimitSubject(getClientIp(request)),
+      limit: 20,
+      windowSeconds: 60 * 60
+    },
+    {
+      scope: "account_export:user",
+      subject: rateLimitSubject(appUserId),
+      limit: 5,
+      windowSeconds: 24 * 60 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
+
   const rows = await buildExportRows(supabase, appUserId);
   const csv = toCsv(rows);
   const today = new Date().toISOString().slice(0, 10);
 
-  await supabase.from("data_exports").insert({
+  const { error: exportLogError } = await supabase.from("data_exports").insert({
     user_id: appUserId,
     format: "csv",
     status: "ready",
     requested_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   });
+
+  if (exportLogError) {
+    logWarn("account.export_log_failed", "Data export was generated but could not be recorded", {
+      ...getRequestLogContext(request, "/api/account/export"),
+      error: exportLogError.message
+    });
+  }
 
   return new Response(csv, {
     headers: {

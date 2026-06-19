@@ -86,8 +86,11 @@ Variables attendues :
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+APP_BASE_URL=http://localhost:3000
 ECOFOODSTOCK_CLIENT_IP_STRATEGY=auto
 ```
+
+`APP_BASE_URL` doit pointer vers l'origine canonique de l'application. En production, elle sert notamment a generer les redirections d'authentification sans faire confiance a l'origin de la requete entrante.
 
 `ECOFOODSTOCK_CLIENT_IP_STRATEGY` controle quels headers IP sont fiables pour le rate limit :
 
@@ -136,4 +139,5 @@ La checklist manuelle complete est dans `docs/mvp1-checklist.md`.
 - `docs/architecture-ecofoodstock.md`
 - `docs/revue-captures-ecrans-ecofoodstock.md`
 - `docs/observabilite-production.md`
+- `docs/securite-production.md`
 - `schema-bdd-ecofoodstock.sql`

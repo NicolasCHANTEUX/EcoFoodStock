@@ -9,8 +9,6 @@ import { getBrowserAccountStatus } from "@/lib/supabase/browser-account";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { routes } from "@/lib/routes";
 
-const LEGAL_TERMS_VERSION = "2026-06-07";
-const PRIVACY_POLICY_VERSION = "2026-06-07";
 const PENDING_LEGAL_CONSENT_KEY = "ecofoodstock:pending-legal-consent";
 
 type SignupResponse = {
@@ -245,9 +243,7 @@ export function AuthCard() {
             password,
             inviteToken,
             full_name: cleanFullName,
-            acceptedLegalTerms,
-            legalTermsVersion: LEGAL_TERMS_VERSION,
-            privacyPolicyVersion: PRIVACY_POLICY_VERSION
+            acceptedLegalTerms
           })
         });
         const signupBody = (await res.json().catch(() => null)) as SignupResponse | null;
@@ -466,9 +462,7 @@ function savePendingLegalConsent() {
   window.localStorage.setItem(
     PENDING_LEGAL_CONSENT_KEY,
     JSON.stringify({
-      acceptedAt: new Date().toISOString(),
-      legalTermsVersion: LEGAL_TERMS_VERSION,
-      privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      accepted: true
     })
   );
 }
@@ -481,11 +475,7 @@ async function syncPendingLegalConsent(accessToken: string) {
   }
 
   try {
-    const consent = JSON.parse(stored) as {
-      acceptedAt?: string;
-      legalTermsVersion?: string;
-      privacyPolicyVersion?: string;
-    };
+    JSON.parse(stored);
 
     const response = await fetch("/api/account/legal-consent", {
       method: "POST",
@@ -493,7 +483,7 @@ async function syncPendingLegalConsent(accessToken: string) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`
       },
-      body: JSON.stringify(consent)
+      body: JSON.stringify({ accepted: true })
     });
 
     if (response.ok) {

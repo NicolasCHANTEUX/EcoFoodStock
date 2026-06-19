@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getRequestLogContext, logError } from "@/lib/observability/logger";
 import {
   canUseDemoMode,
   ensureUserHousehold,
@@ -52,7 +53,7 @@ export async function requireHouseholdAccess(
   const requireAuth = isProductionEnvironment() || options.requireAuth === true;
 
   if (context.authenticated) {
-    const access = await resolveAuthenticatedHouseholdAccess(supabase, context, options);
+    const access = await resolveAuthenticatedHouseholdAccess(request, supabase, context, options);
     return access.ok ? { ok: true, supabase, context, householdId: access.householdId } : access;
   }
 
@@ -85,6 +86,7 @@ export async function requireHouseholdAccess(
 }
 
 async function resolveAuthenticatedHouseholdAccess(
+  request: Request,
   supabase: SupabaseClient,
   context: AccountContext,
   options: HouseholdAccessOptions
@@ -96,10 +98,11 @@ async function resolveAuthenticatedHouseholdAccess(
     try {
       householdId = await ensureUserHousehold(supabase, context);
     } catch (error) {
+      logError("household_access.resolve_failed", error, getRequestLogContext(request, new URL(request.url).pathname));
       return {
         ok: false as const,
         response: NextResponse.json(
-          { ok: false, message: "Unable to resolve household", error: error instanceof Error ? error.message : String(error) },
+          { ok: false, message: "Unable to resolve household" },
           { status: 500 }
         )
       };

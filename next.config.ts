@@ -15,6 +15,24 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "frame-ancestors 'none'"
 ].join("; ");
+const securityHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()"
+  },
+  ...(isDevelopment
+    ? []
+    : [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=63072000; includeSubDomains; preload"
+        }
+      ])
+];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -26,16 +44,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: [
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()"
-          }
-        ]
+        headers: securityHeaders
       }
     ];
   }

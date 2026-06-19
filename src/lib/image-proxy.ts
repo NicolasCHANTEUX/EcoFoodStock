@@ -15,7 +15,7 @@ export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOpti
     const parsed = new URL(url);
 
     if (!OFF_IMAGE_HOSTS.has(parsed.hostname)) {
-      return url;
+      return undefined;
     }
 
     parsed.protocol = "https:";
@@ -27,7 +27,7 @@ export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOpti
 
     return `/api/images?src=${encodeURIComponent(optimizedUrl)}`;
   } catch {
-    return url;
+    return undefined;
   }
 }
 

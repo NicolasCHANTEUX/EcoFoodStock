@@ -10,24 +10,46 @@ const quantityUnitSchema = z.preprocess(
   z.enum(["g", "ml", "pieces", "portions", "pots", "paquets", "bouteilles"])
 );
 
+const optionalUuidSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
+  z.string().uuid().optional()
+);
+const optionalBarcodeSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
+  z.string().regex(/^\d{6,18}$/).optional()
+);
+const nullableText = (maxLength: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z.string().max(maxLength).nullable().optional()
+  );
+const nullableUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
+  z.string().url().max(500).nullable().optional()
+);
+const nullableDateSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+);
+
 const createBatchSchema = z.object({
   product: z.object({
-    id: z.string().trim().optional(),
-    barcode: z.string().trim().optional(),
-    name: z.string().trim().min(1),
-    brand: z.string().trim().nullable().optional(),
-    category: z.string().trim().nullable().optional(),
-    imageUrl: z.string().trim().nullable().optional(),
-    source: z.string().trim().optional(),
+    id: optionalUuidSchema,
+    barcode: optionalBarcodeSchema,
+    name: z.string().trim().min(1).max(200),
+    brand: nullableText(120),
+    category: nullableText(120),
+    imageUrl: nullableUrlSchema,
+    source: z.enum(["manual", "scan", "open_food_facts"]).optional(),
     default_storage_area: z.enum(["fresh", "frozen", "dry", "other"]).optional(),
     default_unit: quantityUnitSchema.optional(),
-    quantityText: z.string().trim().nullable().optional()
+    quantityText: nullableText(80)
   }),
-  quantity: z.coerce.number().positive(),
+  quantity: z.coerce.number().positive().max(100_000),
   unit: quantityUnitSchema,
   storageArea: z.enum(["fresh", "frozen", "dry", "other"]).default("other"),
-  expirationDate: z.string().trim().nullable().optional(),
-  notes: z.string().trim().nullable().optional()
+  expirationDate: nullableDateSchema,
+  notes: nullableText(1_000)
 });
 
 export async function POST(req: Request) {

@@ -1,13 +1,27 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 
 type HouseholdMembership = {
   household_id: string;
 };
 
+const deleteAccountSchema = z
+  .object({
+    confirmation: z.string().trim().transform((value) => value.toLocaleLowerCase("fr-FR")).pipe(z.literal("supprimer"))
+  })
+  .strict();
+
 export async function DELETE(request: Request) {
+  const parsedPayload = deleteAccountSchema.safeParse(await request.json().catch(() => null));
+
+  if (!parsedPayload.success) {
+    return NextResponse.json({ ok: false, message: "Confirmation de suppression invalide." }, { status: 400 });
+  }
+
   const access = await requireHouseholdAccess(request, { requireAuth: true });
 
   if (!access.ok) {
@@ -15,6 +29,24 @@ export async function DELETE(request: Request) {
   }
 
   const { context, supabase } = access;
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "account_delete:ip",
+      subject: rateLimitSubject(getClientIp(request)),
+      limit: 5,
+      windowSeconds: 60 * 60
+    },
+    {
+      scope: "account_delete:user",
+      subject: rateLimitSubject(context.appUserId ?? context.authUserId),
+      limit: 3,
+      windowSeconds: 24 * 60 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
 
   try {
     if (context.appUserId) {
@@ -37,8 +69,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        message: "Impossible de supprimer le compte pour le moment.",
-        error: error instanceof Error ? error.message : String(error)
+        message: "Impossible de supprimer le compte pour le moment."
       },
       { status: 500 }
     );

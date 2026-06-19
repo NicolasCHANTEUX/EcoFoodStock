@@ -23,3 +23,4 @@ Ce dossier regroupe les documents projet qui ne sont pas le README principal.
 ## Exploitation
 
 - `observabilite-production.md` : logs JSON, Sentry, alertes et audit regulier des dependances.
+- `securite-production.md` : secrets, service role Supabase, backups, restauration et CSP avant exposition publique.

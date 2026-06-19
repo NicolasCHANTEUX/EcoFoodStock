@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { calculateTargetCalories, type SettingsProfile } from "@/lib/settings";
+import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { ensureUserHousehold, resolveAccountContext } from "@/lib/supabase/account-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -32,10 +34,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Utilisateur non authentifie" }, { status: 401 });
   }
 
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "onboarding_complete:ip",
+      subject: rateLimitSubject(getClientIp(request)),
+      limit: 30,
+      windowSeconds: 10 * 60
+    },
+    {
+      scope: "onboarding_complete:user",
+      subject: rateLimitSubject(context.appUserId),
+      limit: 10,
+      windowSeconds: 60 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
+
   try {
     await ensureUserHousehold(supabase, context);
   } catch (error) {
-    return NextResponse.json({ ok: false, message: "Unable to resolve household", error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    logError("onboarding.household_resolve_failed", error, getRequestLogContext(request, "/api/onboarding/complete"));
+    return NextResponse.json({ ok: false, message: "Impossible de finaliser l'onboarding pour le moment." }, { status: 500 });
   }
 
   const profile = normalizeProfile(payload);
@@ -52,7 +74,8 @@ export async function POST(request: Request) {
   );
 
   if (preferencesError) {
-    return NextResponse.json({ ok: false, message: "Unable to save preferences", error: preferencesError.message }, { status: 500 });
+    logError("onboarding.preferences_save_failed", preferencesError, getRequestLogContext(request, "/api/onboarding/complete"));
+    return NextResponse.json({ ok: false, message: "Impossible d'enregistrer l'onboarding pour le moment." }, { status: 500 });
   }
 
   const { error: healthError } = await supabase.from("user_health_profiles").upsert(
@@ -67,26 +90,39 @@ export async function POST(request: Request) {
   );
 
   if (healthError) {
-    return NextResponse.json({ ok: false, message: "Unable to save health profile", error: healthError.message }, { status: 500 });
+    logError("onboarding.health_profile_save_failed", healthError, getRequestLogContext(request, "/api/onboarding/complete"));
+    return NextResponse.json({ ok: false, message: "Impossible d'enregistrer l'onboarding pour le moment." }, { status: 500 });
   }
 
   const targetCalories = calculateTargetCalories(profile);
 
   if (targetCalories !== null) {
-    await supabase
+    const { error: deactivateGoalError } = await supabase
       .from("nutrition_goals")
       .update({ is_active: false })
       .eq("user_id", context.appUserId)
       .eq("is_active", true);
 
-    await supabase.from("nutrition_goals").insert({
+    if (deactivateGoalError) {
+      logWarn("onboarding.goal_deactivate_failed", "Unable to deactivate previous nutrition goals", {
+        ...getRequestLogContext(request, "/api/onboarding/complete"),
+        error: deactivateGoalError.message
+      });
+    }
+
+    const { error: goalError } = await supabase.from("nutrition_goals").insert({
       user_id: context.appUserId,
       calories_kcal: targetCalories,
       is_active: true
     });
+
+    if (goalError) {
+      logError("onboarding.goal_insert_failed", goalError, getRequestLogContext(request, "/api/onboarding/complete"));
+      return NextResponse.json({ ok: false, message: "Impossible d'enregistrer l'onboarding pour le moment." }, { status: 500 });
+    }
   }
 
-  await supabase.from("notification_preferences").upsert(
+  const { error: notificationError } = await supabase.from("notification_preferences").upsert(
     {
       user_id: context.appUserId,
       expiration_alert_enabled: notifications.expiryAlerts ?? true,
@@ -95,13 +131,21 @@ export async function POST(request: Request) {
     { onConflict: "user_id" }
   );
 
+  if (notificationError) {
+    logWarn("onboarding.notification_preferences_save_failed", "Unable to save notification preferences", {
+      ...getRequestLogContext(request, "/api/onboarding/complete"),
+      error: notificationError.message
+    });
+  }
+
   const { error: userError } = await supabase
     .from("users")
     .update({ onboarding_completed: true })
     .eq("id", context.appUserId);
 
   if (userError) {
-    return NextResponse.json({ ok: false, message: "Unable to mark onboarding complete", error: userError.message }, { status: 500 });
+    logError("onboarding.user_mark_complete_failed", userError, getRequestLogContext(request, "/api/onboarding/complete"));
+    return NextResponse.json({ ok: false, message: "Impossible de finaliser l'onboarding pour le moment." }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

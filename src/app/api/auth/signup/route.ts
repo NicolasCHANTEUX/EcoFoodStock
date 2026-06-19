@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
+import { CURRENT_LEGAL_TERMS_VERSION, CURRENT_PRIVACY_POLICY_VERSION } from "@/lib/legal";
 import { createSupabasePublicServerClient } from "@/lib/supabase/server";
 
-const DEFAULT_LEGAL_TERMS_VERSION = "2026-06-07";
-const DEFAULT_PRIVACY_POLICY_VERSION = "2026-06-07";
 const SIGNUP_MAX_BY_IP = 8;
 const SIGNUP_MAX_BY_EMAIL = 3;
 
@@ -19,8 +18,6 @@ const signupSchema = z
       .refine(isStrongEnoughPassword, "Le mot de passe doit contenir au moins une lettre et un chiffre."),
     full_name: z.string().trim().min(2).max(100).transform(normalizeDisplayName),
     acceptedLegalTerms: z.literal(true),
-    legalTermsVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).default(DEFAULT_LEGAL_TERMS_VERSION),
-    privacyPolicyVersion: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).default(DEFAULT_PRIVACY_POLICY_VERSION),
     inviteToken: z.preprocess(
       (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
       z.string().max(128).regex(/^[a-zA-Z0-9._:-]+$/).optional()
@@ -79,8 +76,8 @@ export async function POST(request: Request) {
           display_name: payload.full_name,
           name: payload.full_name,
           legal_terms_accepted_at: legalTermsAcceptedAt,
-          legal_terms_version: payload.legalTermsVersion,
-          privacy_policy_version: payload.privacyPolicyVersion
+          legal_terms_version: CURRENT_LEGAL_TERMS_VERSION,
+          privacy_policy_version: CURRENT_PRIVACY_POLICY_VERSION
         }
       }
     });
@@ -122,13 +119,25 @@ function createSignupResponse(options: { needsEmailConfirmation: boolean; status
 }
 
 function buildEmailRedirectTo(request: Request, inviteToken?: string) {
-  const redirectUrl = new URL("/login", new URL(request.url).origin);
+  const redirectUrl = new URL("/login", getAppBaseUrl(request));
 
   if (inviteToken) {
     redirectUrl.searchParams.set("token", inviteToken);
   }
 
   return redirectUrl.toString();
+}
+
+function getAppBaseUrl(request: Request) {
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("APP_BASE_URL is required in production for auth redirects");
+  }
+
+  return new URL(request.url).origin;
 }
 
 function isStrongEnoughPassword(value: string) {

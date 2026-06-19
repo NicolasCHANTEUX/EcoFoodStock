@@ -425,7 +425,10 @@ export function SettingsView() {
 
       const response = await fetch("/api/account/delete", {
         method: "DELETE",
-        headers
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({
+          confirmation: confirmState?.type === "delete-account" && confirmState.step === "phrase" ? confirmState.phrase : ""
+        })
       });
 
       const payload = await response.json().catch(() => null);
