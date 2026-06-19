@@ -7,13 +7,15 @@ import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lin
 import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
 import { getClientIp } from "@/lib/rate-limit";
 import { createLogRecord, getOrCreateRequestId, sanitizeLogContext } from "@/lib/observability/logger";
+import { buildStrictContentSecurityPolicy } from "@/lib/security/csp";
+import { assertServerOnlySupabaseServiceRoleConfig } from "@/lib/security/secrets";
 import {
   SETTINGS_PROFILE_STORAGE_KEY,
   readStoredSettingsProfile,
   toLocalSettingsProfile,
   writeStoredSettingsProfile
 } from "@/lib/settings-storage";
-import { defaultSettingsProfile } from "@/lib/settings";
+import { defaultSettingsProfile, normalizeDailyCaloriesAdjustment } from "@/lib/settings";
 import { formatQuantity, normalizeQuantityUnit, quantityUnitLabel } from "@/lib/units";
 
 test("quantity units are normalized and displayed with French labels", () => {
@@ -103,6 +105,39 @@ test("settings local storage keeps only non-sensitive preferences", () => {
       diet: defaultSettingsProfile.diet,
       householdSize: 12
     }
+  );
+});
+
+test("daily calorie adjustment is rounded and bounded", () => {
+  assert.equal(normalizeDailyCaloriesAdjustment(5000), 2000);
+  assert.equal(normalizeDailyCaloriesAdjustment(-5000), -2000);
+  assert.equal(normalizeDailyCaloriesAdjustment("349.6"), 350);
+  assert.equal(normalizeDailyCaloriesAdjustment("not-a-number", 125), 125);
+});
+
+test("strict CSP uses script nonces and service-role secrets fail closed", () => {
+  const csp = buildStrictContentSecurityPolicy("nonce-test");
+
+  assert.match(csp, /script-src 'self' 'nonce-nonce-test'/);
+  assert.equal(csp.includes("script-src 'self' 'unsafe-inline'"), false);
+  assert.ok(csp.includes("frame-ancestors 'none'"));
+
+  assert.throws(
+    () =>
+      assertServerOnlySupabaseServiceRoleConfig({
+        NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: "leaked-service-role",
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role"
+      }),
+    /NEXT_PUBLIC_/
+  );
+  assert.throws(
+    () =>
+      assertServerOnlySupabaseServiceRoleConfig({
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "same-key",
+        SUPABASE_SERVICE_ROLE_KEY: "same-key"
+      }),
+    /different/
   );
 });
 

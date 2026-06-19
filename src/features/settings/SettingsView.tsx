@@ -54,7 +54,7 @@ const STORAGE_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 type SettingsSection = "household" | "personal" | "history" | "account" | "application";
 type ConfirmState =
   | { type: "logout" }
-  | { type: "delete-account"; step: "intro" | "phrase"; phrase: string }
+  | { type: "delete-account"; step: "intro" | "phrase"; phrase: string; password: string }
   | null;
 
 const settingsSectionConfigs: Record<SettingsSection, { title: string; description: string; icon: LucideIcon }> = {
@@ -427,7 +427,8 @@ export function SettingsView() {
         method: "DELETE",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({
-          confirmation: confirmState?.type === "delete-account" && confirmState.step === "phrase" ? confirmState.phrase : ""
+          confirmation: confirmState?.type === "delete-account" && confirmState.step === "phrase" ? confirmState.phrase : "",
+          password: confirmState?.type === "delete-account" && confirmState.step === "phrase" ? confirmState.password : ""
         })
       });
 
@@ -448,12 +449,12 @@ export function SettingsView() {
       clearEcoFoodStockStorage(window.sessionStorage);
       await clearCacheStorage();
       clearBrowserAccountStatusCache();
+      setConfirmState(null);
       router.replace(routes.login);
     } catch (error) {
       setAccountActionStatus((error as Error).message ?? "Impossible de supprimer le compte pour le moment.");
     } finally {
       setDeletingAccount(false);
-      setConfirmState(null);
     }
   }
 
@@ -818,7 +819,10 @@ export function SettingsView() {
                 variant="danger"
                 type="button"
                 className="gap-2 sm:shrink-0"
-                onClick={() => setConfirmState({ type: "delete-account", step: "intro", phrase: "" })}
+                onClick={() => {
+                  setAccountActionStatus(null);
+                  setConfirmState({ type: "delete-account", step: "intro", phrase: "", password: "" });
+                }}
                 disabled={deletingAccount || exportingData || signingOut || clearingCache}
               >
                 <Trash2 className="h-4 w-4" />
@@ -963,7 +967,7 @@ export function SettingsView() {
         onCancel={() => setConfirmState(null)}
         onConfirm={() => {
           if (confirmState?.type === "delete-account" && confirmState.step === "intro") {
-            setConfirmState({ type: "delete-account", step: "phrase", phrase: "" });
+            setConfirmState({ type: "delete-account", step: "phrase", phrase: "", password: "" });
             return;
           }
 
@@ -971,13 +975,46 @@ export function SettingsView() {
         }}
       >
         {confirmState?.type === "delete-account" && confirmState.step === "phrase" ? (
-          <input
-            autoFocus
-            className="mt-4 h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none focus:border-brand-500"
-            value={confirmState.phrase}
-            placeholder="supprimer"
-            onChange={(event) => setConfirmState({ type: "delete-account", step: "phrase", phrase: event.target.value })}
-          />
+          <div className="mt-4 space-y-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              Phrase de confirmation
+              <input
+                autoFocus
+                className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none focus:border-brand-500"
+                value={confirmState.phrase}
+                placeholder="supprimer"
+                onChange={(event) =>
+                  setConfirmState({
+                    type: "delete-account",
+                    step: "phrase",
+                    phrase: event.target.value,
+                    password: confirmState.password
+                  })
+                }
+              />
+            </label>
+
+            <label className="block text-sm font-semibold text-slate-700">
+              Mot de passe actuel <span className="font-normal text-slate-500">(compte email uniquement)</span>
+              <input
+                autoComplete="current-password"
+                className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 outline-none focus:border-brand-500"
+                type="password"
+                value={confirmState.password}
+                placeholder="Votre mot de passe"
+                onChange={(event) =>
+                  setConfirmState({
+                    type: "delete-account",
+                    step: "phrase",
+                    phrase: confirmState.phrase,
+                    password: event.target.value
+                  })
+                }
+              />
+            </label>
+
+            {accountActionStatus ? <p className="text-sm font-medium text-rose-600">{accountActionStatus}</p> : null}
+          </div>
         ) : null}
       </ConfirmDialog>
     </div>

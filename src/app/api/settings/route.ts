@@ -8,6 +8,7 @@ import {
   calculateMaintenanceCalories,
   calculateTargetCalories,
   defaultSettingsProfile,
+  normalizeDailyCaloriesAdjustment,
   type SettingsProfile
 } from "@/lib/settings";
 
@@ -357,7 +358,7 @@ function normalizeProfile(payload: Partial<SettingsProfile>): SettingsProfile {
     heightCm: clampNumber(payload.heightCm, 80, 260, defaultSettingsProfile.heightCm),
     sex: payload.sex === "female" || payload.sex === "other" ? payload.sex : "male",
     goal: payload.goal === "mass_gain" || payload.goal === "cut" ? payload.goal : "maintenance",
-    dailyCaloriesAdjustment: Number.isFinite(Number(payload.dailyCaloriesAdjustment)) ? Number(payload.dailyCaloriesAdjustment) : 0
+    dailyCaloriesAdjustment: normalizeDailyCaloriesAdjustment(payload.dailyCaloriesAdjustment)
   };
 }
 

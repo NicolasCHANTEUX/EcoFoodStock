@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
+const strictCspEnabled = ["1", "true", "yes", "on"].includes(
+  process.env.ECOFOODSTOCK_STRICT_CSP?.trim().toLowerCase() ?? ""
+);
+const configuredBuildCpus = Number.parseInt(process.env.ECOFOODSTOCK_BUILD_CPUS ?? "", 10);
+const buildCpus = Number.isInteger(configuredBuildCpus) && configuredBuildCpus > 0 ? configuredBuildCpus : undefined;
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
@@ -16,7 +21,7 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'"
 ].join("; ");
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  ...(strictCspEnabled ? [] : [{ key: "Content-Security-Policy", value: contentSecurityPolicy }]),
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -37,6 +42,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
+    ...(buildCpus ? { cpus: buildCpus } : {}),
     optimizePackageImports: ["lucide-react"]
   },
   outputFileTracingRoot: process.cwd(),

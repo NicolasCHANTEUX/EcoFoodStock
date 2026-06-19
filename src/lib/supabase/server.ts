@@ -1,8 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import { assertServerOnlySupabaseServiceRoleConfig } from "@/lib/security/secrets";
 
 export function createSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  assertServerOnlySupabaseServiceRoleConfig();
 
   if (!url || !serviceRoleKey) {
     throw new Error("Variables Supabase serveur manquantes");

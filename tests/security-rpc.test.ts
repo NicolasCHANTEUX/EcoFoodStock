@@ -9,6 +9,18 @@ function readProjectFile(relativePath: string) {
   return readFileSync(path.join(root, relativePath), "utf8").replace(/\r\n/g, "\n");
 }
 
+function listSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      return listSourceFiles(entryPath);
+    }
+
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [entryPath] : [];
+  });
+}
+
 function assertIncludes(source: string, expected: string, context: string) {
   assert.ok(source.includes(expected), `${context} should include: ${expected}`);
 }
@@ -184,9 +196,67 @@ test("high-risk account routes use server-owned legal consent and generic client
 
   assertIncludes(deleteRoute, "confirmation", "delete account route");
   assertIncludes(deleteRoute, "z.literal(\"supprimer\")", "delete account route");
+  assertIncludes(deleteRoute, "password: z.string().max(1024).optional()", "delete account route");
+  assertIncludes(deleteRoute, "verifyAccountDeletionReauthentication", "delete account route");
+  assertIncludes(deleteRoute, "signInWithPassword", "delete account route");
+  assertIncludes(deleteRoute, "RECENT_OAUTH_REAUTH_WINDOW_MS", "delete account route");
   assertNotIncludes(deleteRoute, "error: error instanceof Error", "delete account route");
   assertNotIncludes(onboardingRoute, "String(error) },", "onboarding route");
   assertNotIncludes(householdAccess, "String(error) },", "household access");
+});
+
+test("CSP can be switched to a nonce-based strict script policy", () => {
+  const nextConfig = readProjectFile("next.config.ts");
+  const middleware = readProjectFile("src/middleware.ts");
+  const layout = readProjectFile("src/app/layout.tsx");
+  const csp = readProjectFile("src/lib/security/csp.ts");
+  const envExample = readProjectFile(".env.example");
+  const securityDoc = readProjectFile("docs/securite-production.md");
+
+  assertIncludes(nextConfig, "ECOFOODSTOCK_STRICT_CSP", "Next security headers");
+  assertIncludes(nextConfig, "strictCspEnabled ? []", "Next security headers");
+  assertIncludes(middleware, "createCspNonce", "strict CSP middleware");
+  assertIncludes(middleware, "x-nonce", "strict CSP middleware");
+  assertIncludes(middleware, "Content-Security-Policy", "strict CSP middleware");
+  assertIncludes(layout, "nonce={nonce}", "root layout CSP nonce");
+  assertIncludes(csp, "`script-src 'self' 'nonce-${nonce}'", "strict CSP helper");
+  assertNotIncludes(csp, "script-src 'self' 'unsafe-inline'", "strict CSP helper");
+  assertIncludes(envExample, "ECOFOODSTOCK_STRICT_CSP=false", "env example");
+  assertIncludes(securityDoc, "ECOFOODSTOCK_STRICT_CSP=true", "security documentation");
+});
+
+test("service-role and backup operations have guardrails and a restore runbook", () => {
+  const supabaseServer = readProjectFile("src/lib/supabase/server.ts");
+  const secretGuards = readProjectFile("src/lib/security/secrets.ts");
+  const envExample = readProjectFile(".env.example");
+  const securityDoc = readProjectFile("docs/securite-production.md");
+  const backupRunbook = readProjectFile("docs/procedure-backup-restauration-supabase.md");
+  const docsReadme = readProjectFile("docs/README.md");
+
+  assertIncludes(supabaseServer, "assertServerOnlySupabaseServiceRoleConfig", "Supabase server client");
+  assertIncludes(secretGuards, "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY", "service-role guards");
+  assertIncludes(secretGuards, "serviceRoleKey === anonKey", "service-role guards");
+  assertNotIncludes(envExample, "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY", "env example");
+  assertIncludes(securityDoc, "L'application refuse au runtime", "security documentation");
+  assertIncludes(backupRunbook, "Restauration de test", "backup restore runbook");
+  assertIncludes(backupRunbook, "staging", "backup restore runbook");
+  assertIncludes(backupRunbook, "SUPABASE_SERVICE_ROLE_KEY", "backup restore runbook");
+  assertIncludes(backupRunbook, "30 derniers jours", "backup restore runbook");
+  assertIncludes(docsReadme, "procedure-backup-restauration-supabase.md", "docs README");
+
+  const allowedServiceRoleSources = new Set([
+    "src/lib/security/secrets.ts",
+    "src/lib/supabase/server.ts"
+  ]);
+
+  for (const absolutePath of listSourceFiles(path.join(root, "src"))) {
+    const relativePath = path.relative(root, absolutePath).replace(/\\/g, "/");
+    const source = readFileSync(absolutePath, "utf8");
+
+    if (source.includes("SUPABASE_SERVICE_ROLE_KEY")) {
+      assert.ok(allowedServiceRoleSources.has(relativePath), `service-role secret referenced outside server guard: ${relativePath}`);
+    }
+  }
 });
 
 test("inventory batch creation validates bounded product fields", () => {

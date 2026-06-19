@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { calculateTargetCalories, type SettingsProfile } from "@/lib/settings";
+import { calculateTargetCalories, normalizeDailyCaloriesAdjustment, type SettingsProfile } from "@/lib/settings";
 import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { ensureUserHousehold, resolveAccountContext } from "@/lib/supabase/account-context";
@@ -161,7 +161,7 @@ function normalizeProfile(payload: Partial<OnboardingPayload>): SettingsProfile 
     heightCm: clampNumber(payload.heightCm, 80, 260, 175),
     sex: payload.sex === "female" || payload.sex === "other" ? payload.sex : "male",
     goal: payload.goal === "mass_gain" || payload.goal === "cut" ? payload.goal : "maintenance",
-    dailyCaloriesAdjustment: Number.isFinite(Number(payload.dailyCaloriesAdjustment)) ? Number(payload.dailyCaloriesAdjustment) : 0
+    dailyCaloriesAdjustment: normalizeDailyCaloriesAdjustment(payload.dailyCaloriesAdjustment)
   };
 }
 

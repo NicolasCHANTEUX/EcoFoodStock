@@ -4,14 +4,31 @@ import { z } from "zod";
 import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
+import { createSupabasePublicServerClient } from "@/lib/supabase/server";
 
 type HouseholdMembership = {
   household_id: string;
 };
 
+type SupabaseAuthUser = {
+  id: string;
+  email?: string;
+  last_sign_in_at?: string;
+  app_metadata?: {
+    provider?: string;
+    providers?: string[];
+  };
+  identities?: Array<{
+    provider?: string;
+  }>;
+};
+
+const RECENT_OAUTH_REAUTH_WINDOW_MS = 15 * 60 * 1000;
+
 const deleteAccountSchema = z
   .object({
-    confirmation: z.string().trim().transform((value) => value.toLocaleLowerCase("fr-FR")).pipe(z.literal("supprimer"))
+    confirmation: z.string().trim().transform((value) => value.toLocaleLowerCase("fr-FR")).pipe(z.literal("supprimer")),
+    password: z.string().max(1024).optional()
   })
   .strict();
 
@@ -46,6 +63,36 @@ export async function DELETE(request: Request) {
 
   if (!rateLimit.allowed) {
     return createRateLimitResponse(rateLimit);
+  }
+
+  let reauthentication;
+
+  try {
+    reauthentication = await verifyAccountDeletionReauthentication(
+      request,
+      supabase,
+      context.authUserId!,
+      parsedPayload.data.password
+    );
+  } catch (error) {
+    logError("account.delete_reauth_unavailable", error, getRequestLogContext(request, "/api/account/delete"));
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Réauthentification temporairement indisponible. Réessayez plus tard."
+      },
+      { status: 503 }
+    );
+  }
+
+  if (!reauthentication.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: reauthentication.message
+      },
+      { status: reauthentication.status }
+    );
   }
 
   try {
@@ -168,6 +215,104 @@ async function deleteInvitationTokensIfAvailable(supabase: SupabaseClient, house
   if (error && !isMissingRelationError(error.message)) {
     throw error;
   }
+}
+
+async function verifyAccountDeletionReauthentication(
+  request: Request,
+  supabase: SupabaseClient,
+  authUserId: string,
+  password: string | undefined
+) {
+  const logContext = getRequestLogContext(request, "/api/account/delete");
+  const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(authUserId);
+  const authUser = authUserData.user as SupabaseAuthUser | null;
+
+  if (authUserError || !authUser?.id) {
+    logError("account.delete_reauth_lookup_failed", authUserError ?? new Error("Auth user not found"), logContext);
+    return {
+      ok: false as const,
+      status: 401,
+      message: "Réauthentification requise avant suppression du compte."
+    };
+  }
+
+  if (requiresPasswordReauthentication(authUser)) {
+    return verifyPasswordReauthentication(request, authUser, password);
+  }
+
+  if (!hasRecentOAuthSignIn(authUser.last_sign_in_at)) {
+    logWarn("account.delete_oauth_reauth_required", "Account deletion blocked until recent OAuth sign-in", {
+      ...logContext,
+      authProvider: Array.from(getAuthProviders(authUser)).join(",") || "unknown"
+    });
+
+    return {
+      ok: false as const,
+      status: 428,
+      message: "Reconnectez-vous avec votre fournisseur d'identité, puis relancez la suppression."
+    };
+  }
+
+  return { ok: true as const };
+}
+
+async function verifyPasswordReauthentication(request: Request, authUser: SupabaseAuthUser, password: string | undefined) {
+  const email = authUser.email?.trim();
+  const logContext = getRequestLogContext(request, "/api/account/delete");
+
+  if (!email || !password) {
+    return {
+      ok: false as const,
+      status: 400,
+      message: "Réauthentification requise : saisissez le mot de passe du compte."
+    };
+  }
+
+  const publicSupabase = createSupabasePublicServerClient();
+  const { data: signInData, error: signInError } = await publicSupabase.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (signInError || signInData.user?.id !== authUser.id) {
+    logWarn("account.delete_password_reauth_failed", "Account deletion password reauthentication failed", {
+      ...logContext,
+      authProvider: "email"
+    });
+
+    return {
+      ok: false as const,
+      status: 401,
+      message: "Mot de passe invalide ou réauthentification impossible."
+    };
+  }
+
+  return { ok: true as const };
+}
+
+function requiresPasswordReauthentication(user: SupabaseAuthUser) {
+  return getAuthProviders(user).has("email");
+}
+
+function getAuthProviders(user: SupabaseAuthUser) {
+  const providers = new Set<string>();
+  const appProviders = Array.isArray(user.app_metadata?.providers) ? user.app_metadata.providers : [];
+  const identityProviders = Array.isArray(user.identities) ? user.identities.map((identity) => identity.provider) : [];
+
+  for (const provider of [user.app_metadata?.provider, ...appProviders, ...identityProviders]) {
+    const normalizedProvider = provider?.trim().toLowerCase();
+
+    if (normalizedProvider) {
+      providers.add(normalizedProvider);
+    }
+  }
+
+  return providers;
+}
+
+function hasRecentOAuthSignIn(lastSignInAt: string | undefined, now = Date.now()) {
+  const lastSignInTimestamp = Date.parse(lastSignInAt ?? "");
+  return Number.isFinite(lastSignInTimestamp) && now - lastSignInTimestamp <= RECENT_OAUTH_REAUTH_WINDOW_MS;
 }
 
 function isMissingRelationError(message: string) {

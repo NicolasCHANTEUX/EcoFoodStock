@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { IosInstallHelper } from "@/components/shared/IosInstallHelper";
 import { PwaInstallPrompt } from "@/components/shared/PwaInstallPrompt";
 import { ServiceWorkerRegister } from "@/components/shared/ServiceWorkerRegister";
+import { isStrictCspEnabled } from "@/lib/security/csp";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -29,11 +31,13 @@ export const viewport: Viewport = {
   themeColor: "#0f172a"
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const nonce = isStrictCspEnabled() ? ((await headers()).get("x-nonce") ?? undefined) : undefined;
+
   return (
     <html
       lang="fr"
@@ -44,6 +48,7 @@ export default function RootLayout({
     >
       <body>
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
@@ -65,6 +70,7 @@ export default function RootLayout({
           }}
         />
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `
               (function () {

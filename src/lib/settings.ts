@@ -16,6 +16,9 @@ export type SettingsProfile = {
   dailyCaloriesAdjustment: number;
 };
 
+export const MIN_DAILY_CALORIES_ADJUSTMENT = -2000;
+export const MAX_DAILY_CALORIES_ADJUSTMENT = 2000;
+
 export const defaultSettingsProfile: SettingsProfile = {
   householdSize: 3,
   diet: "omnivore",
@@ -27,6 +30,16 @@ export const defaultSettingsProfile: SettingsProfile = {
   goal: "maintenance",
   dailyCaloriesAdjustment: 0
 };
+
+export function normalizeDailyCaloriesAdjustment(value: unknown, fallback = 0) {
+  const numberValue = Math.round(Number(value));
+
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+
+  return Math.min(MAX_DAILY_CALORIES_ADJUSTMENT, Math.max(MIN_DAILY_CALORIES_ADJUSTMENT, numberValue));
+}
 
 export function getGoalDefaultAdjustment(goal: NutritionGoal) {
   if (goal === "mass_gain") {
