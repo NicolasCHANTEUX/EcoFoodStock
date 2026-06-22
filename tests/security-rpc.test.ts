@@ -258,6 +258,7 @@ test("service-role and backup operations have guardrails and a restore runbook",
   const securityDoc = readProjectFile("docs/securite-production.md");
   const backupRunbook = readProjectFile("docs/procedure-backup-restauration-supabase.md");
   const productionSecurityCheck = readProjectFile("scripts/check-production-security.mjs");
+  const deployedSecurityCheck = readProjectFile("scripts/check-deployed-security.mjs");
   const packageJson = readProjectFile("package.json");
   const docsReadme = readProjectFile("docs/README.md");
 
@@ -274,7 +275,15 @@ test("service-role and backup operations have guardrails and a restore runbook",
   assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_BACKUPS_ENABLED", "production security check");
   assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_BACKUP_VERIFIED_AT", "production security check");
   assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_RESTORE_TESTED_AT", "production security check");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT", "production security check");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT", "production security check");
+  assertIncludes(productionSecurityCheck, "NEXT_PUBLIC_SUPABASE_URL", "production security check");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_CLIENT_IP_STRATEGY", "production security check");
+  assertIncludes(deployedSecurityCheck, 'fetchChecked("/login")', "deployed security check");
+  assertIncludes(deployedSecurityCheck, 'fetchChecked("/api/health/summary")', "deployed security check");
+  assertIncludes(deployedSecurityCheck, "unsafe-inline", "deployed security check");
   assertIncludes(packageJson, '"security:prod-check"', "package scripts");
+  assertIncludes(packageJson, '"security:deployed-check"', "package scripts");
 
   const allowedServiceRoleSources = new Set([
     "src/lib/security/secrets.ts",
@@ -307,6 +316,7 @@ test("CI builds Next.js and pins the Supabase CLI version", () => {
   const ciWorkflow = readProjectFile(".github/workflows/ci.yml");
   const dependabotConfig = readProjectFile(".github/dependabot.yml");
   const dependencyAuditWorkflow = readProjectFile(".github/workflows/dependency-audit.yml");
+  const productionSecurityWorkflow = readProjectFile(".github/workflows/production-security-check.yml");
 
   assertIncludes(ciWorkflow, "- name: Build\n        run: npm run build", "CI workflow");
   assertIncludes(ciWorkflow, "npm audit --omit=dev --audit-level=high", "CI workflow");
@@ -324,6 +334,12 @@ test("CI builds Next.js and pins the Supabase CLI version", () => {
   assertIncludes(dependencyAuditWorkflow, "schedule:", "dependency audit workflow");
   assertIncludes(dependencyAuditWorkflow, "workflow_dispatch:", "dependency audit workflow");
   assertIncludes(dependencyAuditWorkflow, "npm audit --omit=dev --audit-level=high", "dependency audit workflow");
+  assertIncludes(productionSecurityWorkflow, "workflow_dispatch:", "production security workflow");
+  assertIncludes(productionSecurityWorkflow, "workflow_call:", "production security workflow");
+  assertIncludes(productionSecurityWorkflow, "environment: production", "production security workflow");
+  assertIncludes(productionSecurityWorkflow, "npm run security:prod-check", "production security workflow");
+  assertIncludes(productionSecurityWorkflow, "npm run security:deployed-check", "production security workflow");
+  assertIncludes(productionSecurityWorkflow, "secrets.SUPABASE_SERVICE_ROLE_KEY", "production security workflow");
 });
 
 test("production observability captures errors and avoids raw server logs", () => {

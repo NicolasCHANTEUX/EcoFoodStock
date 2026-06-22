@@ -2,6 +2,7 @@ import process from "node:process";
 
 const MAX_BACKUP_VERIFICATION_AGE_MS = 8 * 24 * 60 * 60 * 1000;
 const MAX_RESTORE_TEST_AGE_MS = 31 * 24 * 60 * 60 * 1000;
+const MAX_OPERATIONAL_SECURITY_REVIEW_AGE_MS = 31 * 24 * 60 * 60 * 1000;
 const failures = [];
 
 function isEnabled(value) {
@@ -28,15 +29,37 @@ if (!isEnabled(process.env.ECOFOODSTOCK_BACKUPS_ENABLED)) {
 
 requireRecentDate("ECOFOODSTOCK_BACKUP_VERIFIED_AT", MAX_BACKUP_VERIFICATION_AGE_MS);
 requireRecentDate("ECOFOODSTOCK_RESTORE_TESTED_AT", MAX_RESTORE_TEST_AGE_MS);
+requireRecentDate("ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT", MAX_OPERATIONAL_SECURITY_REVIEW_AGE_MS);
+requireRecentDate("ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT", MAX_OPERATIONAL_SECURITY_REVIEW_AGE_MS);
 
 const baseUrl = process.env.APP_BASE_URL?.trim();
 
 try {
-  if (!baseUrl || new URL(baseUrl).protocol !== "https:") {
+  const parsedBaseUrl = new URL(baseUrl ?? "");
+  if (
+    parsedBaseUrl.protocol !== "https:" ||
+    (parsedBaseUrl.pathname !== "/" && parsedBaseUrl.pathname !== "") ||
+    parsedBaseUrl.search ||
+    parsedBaseUrl.hash
+  ) {
     throw new Error("invalid production URL");
   }
 } catch {
-  failures.push("APP_BASE_URL doit être une URL HTTPS valide en production.");
+  failures.push("APP_BASE_URL doit être une origine HTTPS valide, sans chemin, query ou fragment.");
+}
+
+try {
+  const supabaseUrl = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "");
+  if (supabaseUrl.protocol !== "https:") {
+    throw new Error("invalid Supabase URL");
+  }
+} catch {
+  failures.push("NEXT_PUBLIC_SUPABASE_URL doit être une URL HTTPS valide.");
+}
+
+const clientIpStrategy = process.env.ECOFOODSTOCK_CLIENT_IP_STRATEGY?.trim().toLowerCase();
+if (!["auto", "vercel", "cloudflare", "trusted-proxy"].includes(clientIpStrategy ?? "")) {
+  failures.push("ECOFOODSTOCK_CLIENT_IP_STRATEGY doit désigner un proxy de production approuvé.");
 }
 
 if (process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY?.trim()) {
@@ -46,7 +69,12 @@ if (process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY?.trim()) {
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
-if (!serviceRoleKey || !anonKey || serviceRoleKey === anonKey) {
+if (
+  !serviceRoleKey ||
+  !anonKey ||
+  serviceRoleKey === anonKey ||
+  serviceRoleKey.toLowerCase().includes("your-service-role-key")
+) {
   failures.push("Les clés Supabase serveur et anon doivent être présentes et distinctes.");
 }
 

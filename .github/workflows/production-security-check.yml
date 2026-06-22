@@ -1,0 +1,47 @@
+name: Production security check
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-security-check
+  cancel-in-progress: false
+
+jobs:
+  security-check:
+    name: Validate production configuration and deployed headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+      DEPLOYED_BASE_URL: ${{ vars.APP_BASE_URL }}
+      ECOFOODSTOCK_STRICT_CSP: ${{ vars.ECOFOODSTOCK_STRICT_CSP }}
+      ECOFOODSTOCK_BACKUPS_ENABLED: ${{ vars.ECOFOODSTOCK_BACKUPS_ENABLED }}
+      ECOFOODSTOCK_BACKUP_VERIFIED_AT: ${{ vars.ECOFOODSTOCK_BACKUP_VERIFIED_AT }}
+      ECOFOODSTOCK_RESTORE_TESTED_AT: ${{ vars.ECOFOODSTOCK_RESTORE_TESTED_AT }}
+      ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT: ${{ vars.ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT }}
+      ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT: ${{ vars.ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT }}
+      ECOFOODSTOCK_CLIENT_IP_STRATEGY: ${{ vars.ECOFOODSTOCK_CLIENT_IP_STRATEGY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate production configuration
+        run: npm run security:prod-check
+
+      - name: Audit deployed application
+        run: npm run security:deployed-check

@@ -10,12 +10,33 @@ Ce document complete les controles applicatifs par les operations indispensables
 - Regenerer la cle si elle a ete collee dans un ticket, un chat, un log ou une capture.
 - Garder les RPC critiques reservees au role `service_role` et continuer a verifier l'appartenance foyer dans chaque RPC.
 - L'application refuse au runtime une cle `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY`, une cle placeholder ou une cle `service_role` identique a l'anon key.
+- Chaque mois, verifier les scopes Vercel/GitHub, l'absence de la cle dans les logs et l'historique Git, puis renseigner `ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT`.
 
 ## Auth et URLs
 
 - Configurer `APP_BASE_URL` avec l'origine canonique de production, par exemple `https://ecofoodstock.example`.
-- Configurer les Redirect URLs Supabase avec cette meme origine.
+- Dans Supabase Auth > URL Configuration, utiliser cette origine comme Site URL.
+- Autoriser uniquement les chemins necessaires sous l'origine canonique, par exemple `https://ecofoodstock.example/**`. Retirer les domaines de preview et localhost du projet production.
 - En production, l'application refuse de construire les redirections auth depuis l'origin entrant.
+- Apres verification, renseigner `ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT` avec la date ISO du controle.
+
+## Variables obligatoires en production
+
+| Variable | Stockage recommande | Regle |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Vercel + GitHub variable | URL du projet Supabase production |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel + GitHub variable | Cle anon publique, differente du service role |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret Vercel + secret GitHub Environment | Jamais de prefixe `NEXT_PUBLIC_` |
+| `APP_BASE_URL` | Vercel + GitHub variable | Origine HTTPS canonique sans chemin |
+| `ECOFOODSTOCK_STRICT_CSP` | Vercel + GitHub variable | `true` |
+| `ECOFOODSTOCK_CLIENT_IP_STRATEGY` | Vercel | `auto` ou proxy explicitement approuve |
+| `ECOFOODSTOCK_BACKUPS_ENABLED` | GitHub variable | `true` uniquement apres verification reelle |
+| `ECOFOODSTOCK_BACKUP_VERIFIED_AT` | GitHub variable | Date ISO de moins de 8 jours |
+| `ECOFOODSTOCK_RESTORE_TESTED_AT` | GitHub variable | Date ISO d'un test staging de moins de 31 jours |
+| `ECOFOODSTOCK_AUTH_REDIRECTS_VERIFIED_AT` | GitHub variable | Date ISO d'une revue de moins de 31 jours |
+| `ECOFOODSTOCK_SERVICE_ROLE_REVIEWED_AT` | GitHub variable | Date ISO d'une revue de moins de 31 jours |
+
+Ne pas inventer les dates d'attestation : elles representent des controles humains effectivement realises.
 
 ## Sauvegardes et restauration
 
@@ -27,6 +48,17 @@ Avant mise en production :
 - tester au moins une restauration avant d'ouvrir l'application a des utilisateurs reels.
 - suivre la procedure detaillee dans [procedure-backup-restauration-supabase.md](./procedure-backup-restauration-supabase.md).
 - executer `npm run security:prod-check` dans le pipeline de deploiement apres avoir renseigne les attestations de backup et de restauration.
+
+## Workflow pre-production et audit dynamique
+
+Le workflow `.github/workflows/production-security-check.yml` est manuel (`workflow_dispatch`) et reutilisable (`workflow_call`). Il utilise le GitHub Environment protege `production`.
+
+Configurer dans cet Environment les variables du tableau ci-dessus et le secret `SUPABASE_SERVICE_ROLE_KEY`, puis lancer le workflow avant chaque deploiement production. Il execute :
+
+- `npm run security:prod-check` pour la configuration et les attestations ;
+- `npm run security:deployed-check` contre `APP_BASE_URL` pour verifier CSP, HSTS, headers navigateur, nonces HTML et refus anonyme de `/api/health/summary`.
+
+Le workflow doit etre protege par des reviewers GitHub afin qu'une attestation ou un secret ne puisse pas etre modifie sans validation.
 
 ## CSP et headers
 
@@ -54,3 +86,4 @@ Le mode nonce lit les headers de requete dans le layout et rend donc les pages d
 - [ ] Workflow GitHub vert, y compris integration Supabase.
 - [ ] `ECOFOODSTOCK_STRICT_CSP=true` valide en staging et configure en production.
 - [ ] `npm run security:prod-check` vert avec des dates d'attestation reelles.
+- [ ] Workflow `Production security check` vert contre l'URL reellement deployee.

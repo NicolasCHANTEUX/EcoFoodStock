@@ -87,10 +87,13 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 APP_BASE_URL=http://localhost:3000
+ECOFOODSTOCK_STRICT_CSP=true
 ECOFOODSTOCK_CLIENT_IP_STRATEGY=auto
 ```
 
 `APP_BASE_URL` doit pointer vers l'origine canonique de l'application. En production, elle sert notamment a generer les redirections d'authentification sans faire confiance a l'origin de la requete entrante.
+
+La liste exhaustive des variables, attestations de backup/restauration et secrets obligatoires en production est documentee dans `docs/securite-production.md`. Le workflow manuel `Production security check` doit etre vert avant deploiement.
 
 `ECOFOODSTOCK_CLIENT_IP_STRATEGY` controle quels headers IP sont fiables pour le rate limit :
 
