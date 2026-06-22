@@ -54,7 +54,7 @@ export function RadarFamiliesCard({ radar }: { radar?: Record<string, number> })
 
       <div className="mt-4 flex flex-col items-center">
         <div className="relative">
-        <svg width={width} height={isSmall ? 170 : 200} viewBox={`0 0 ${width} ${isSmall ? 170 : 200}`} style={{ overflow: "visible" }}>
+        <svg className="overflow-visible" width={width} height={isSmall ? 170 : 200} viewBox={`0 0 ${width} ${isSmall ? 170 : 200}`}>
           <defs>
             <linearGradient id="radarGrad" x1="0" x2="1">
               <stop offset="0%" stopColor="#34D399" stopOpacity="0.85" />
@@ -90,7 +90,7 @@ export function RadarFamiliesCard({ radar }: { radar?: Record<string, number> })
             stroke="#059669"
             strokeWidth={2}
             fillOpacity={0.6}
-            style={{ transformOrigin: `${cx}px ${cy}px`, transform: animated ? "scale(1)" : "scale(0.85)", opacity: animated ? 1 : 0, transition: "transform 420ms ease, opacity 420ms ease" }}
+            className={`eco-radar-polygon ${animated ? "eco-radar-polygon-visible" : ""}`}
           />
 
           {/* points with tooltip handlers */}
@@ -108,18 +108,15 @@ export function RadarFamiliesCard({ radar }: { radar?: Record<string, number> })
                   fill="#10B981"
                   stroke="#fff"
                   strokeWidth={1.5}
-                  style={{ cursor: "pointer", transition: "r 120ms" }}
-                  onMouseEnter={(e) => {
-                    const rect = (e.target as Element).closest("svg")?.getBoundingClientRect();
-                    const offsetX = rect ? rect.left : 0;
-                    const offsetY = rect ? rect.top : 0;
-                    setTooltip({ x: x + offsetX - padding, y: y + offsetY - 24, label: categories[i].label, value: Math.round(v) });
+                  className="cursor-pointer transition-all"
+                  onMouseEnter={() => {
+                    setTooltip({ x: x + 8, y: y - 36, label: categories[i].label, value: Math.round(v) });
                   }}
                   onMouseMove={(e) => {
                     const rect = (e.target as Element).closest("svg")?.getBoundingClientRect();
                     const offsetX = rect ? rect.left : 0;
                     const offsetY = rect ? rect.top : 0;
-                    setTooltip({ x: (e.clientX - offsetX) + 8, y: (e.clientY - offsetY) - 28, label: categories[i].label, value: Math.round(v) });
+                    setTooltip({ x: e.clientX - offsetX + 8, y: e.clientY - offsetY - 36, label: categories[i].label, value: Math.round(v) });
                   }}
                   onMouseLeave={() => setTooltip(null)}
                 />
@@ -147,14 +144,19 @@ export function RadarFamiliesCard({ radar }: { radar?: Record<string, number> })
               </g>
             );
           })}
-        </svg>
 
-        {tooltip ? (
-          <div style={{ left: tooltip.x, top: tooltip.y }} className="pointer-events-none absolute z-50 rounded-md bg-slate-900 px-2 py-1 text-xs text-white">
-            <div className="font-medium">{tooltip.label}</div>
-            <div className="text-slate-200">{tooltip.value}%</div>
-          </div>
-        ) : null}
+          {tooltip ? (
+            <g transform={`translate(${tooltip.x} ${tooltip.y})`} pointerEvents="none">
+              <rect width="112" height="38" rx="6" fill="#0f172a" />
+              <text x="8" y="15" fontSize="12" fontWeight="600" fill="#ffffff">
+                {tooltip.label}
+              </text>
+              <text x="8" y="30" fontSize="11" fill="#cbd5e1">
+                {tooltip.value}%
+              </text>
+            </g>
+          ) : null}
+        </svg>
         </div>
 
         <div className="mt-3 flex gap-3 text-sm text-slate-600">

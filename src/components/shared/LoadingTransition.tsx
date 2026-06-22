@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, HTMLAttributes } from "react";
+import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 type LoadingTransitionPhase = "loading" | "revealing";
@@ -11,14 +11,6 @@ type LoadingTransitionProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 const tileCount = 72;
-
-function createTileStyle(index: number) {
-  return {
-    "--tile-enter-delay": `${(index * 23) % 190}ms`,
-    "--tile-reveal-delay": `${(index * 47) % 520}ms`,
-    "--tile-wave-delay": `${(index * 31) % 900}ms`
-  } as CSSProperties;
-}
 
 export function LoadingTransition({ className, fullScreen = false, phase = "loading", ...props }: LoadingTransitionProps) {
   return (
@@ -35,7 +27,7 @@ export function LoadingTransition({ className, fullScreen = false, phase = "load
     >
       <div className="eco-loading-mosaic" aria-hidden="true">
         {Array.from({ length: tileCount }, (_, index) => (
-          <span className="eco-loading-tile" key={index} style={createTileStyle(index)} />
+          <span className="eco-loading-tile" key={index} />
         ))}
       </div>
       <div className="eco-loading-focus" aria-hidden="true">

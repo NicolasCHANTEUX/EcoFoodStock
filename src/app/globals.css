@@ -283,6 +283,11 @@ a {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-action) 22%, transparent);
 }
 
+body.eco-dialog-open {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 .settings-choice-active .text-slate-500,
 .settings-choice-active .text-slate-600 {
   color: currentColor;
@@ -323,6 +328,9 @@ a {
 }
 
 .eco-loading-tile {
+  --tile-enter-delay: 0ms;
+  --tile-reveal-delay: 0ms;
+  --tile-wave-delay: 0ms;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -348,6 +356,48 @@ a {
   animation-delay:
     var(--tile-enter-delay),
     var(--tile-wave-delay);
+}
+
+.eco-loading-tile:nth-child(8n + 2) {
+  --tile-enter-delay: 23ms;
+  --tile-reveal-delay: 47ms;
+  --tile-wave-delay: 97ms;
+}
+
+.eco-loading-tile:nth-child(8n + 3) {
+  --tile-enter-delay: 46ms;
+  --tile-reveal-delay: 94ms;
+  --tile-wave-delay: 194ms;
+}
+
+.eco-loading-tile:nth-child(8n + 4) {
+  --tile-enter-delay: 69ms;
+  --tile-reveal-delay: 141ms;
+  --tile-wave-delay: 291ms;
+}
+
+.eco-loading-tile:nth-child(8n + 5) {
+  --tile-enter-delay: 92ms;
+  --tile-reveal-delay: 188ms;
+  --tile-wave-delay: 388ms;
+}
+
+.eco-loading-tile:nth-child(8n + 6) {
+  --tile-enter-delay: 115ms;
+  --tile-reveal-delay: 235ms;
+  --tile-wave-delay: 485ms;
+}
+
+.eco-loading-tile:nth-child(8n + 7) {
+  --tile-enter-delay: 138ms;
+  --tile-reveal-delay: 282ms;
+  --tile-wave-delay: 582ms;
+}
+
+.eco-loading-tile:nth-child(8n + 8) {
+  --tile-enter-delay: 161ms;
+  --tile-reveal-delay: 329ms;
+  --tile-wave-delay: 679ms;
 }
 
 .eco-loading-tile::after {
@@ -429,6 +479,32 @@ a {
   animation: stagger-item-enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   animation-delay: var(--stagger-item-delay, 0ms);
   will-change: opacity, transform;
+}
+
+.stagger-delay-0 { --stagger-item-delay: 0ms; }
+.stagger-delay-1 { --stagger-item-delay: 34ms; }
+.stagger-delay-2 { --stagger-item-delay: 68ms; }
+.stagger-delay-3 { --stagger-item-delay: 102ms; }
+.stagger-delay-4 { --stagger-item-delay: 136ms; }
+.stagger-delay-5 { --stagger-item-delay: 170ms; }
+.stagger-delay-6 { --stagger-item-delay: 204ms; }
+.stagger-delay-7 { --stagger-item-delay: 220ms; }
+
+.eco-fresh-ring {
+  transition: stroke-dashoffset 700ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.eco-radar-polygon {
+  opacity: 0;
+  transform: scale(0.85);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 420ms ease, opacity 420ms ease;
+}
+
+.eco-radar-polygon-visible {
+  opacity: 1;
+  transform: scale(1);
 }
 
 @keyframes stagger-item-enter {

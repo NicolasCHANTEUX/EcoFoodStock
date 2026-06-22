@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { History } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -141,8 +141,7 @@ export function HistoryView({ embedded = false }: { embedded?: boolean } = {}) {
                 {group.events.map((event, eventIndex) => (
                   <div
                     key={event.id}
-                    className="stagger-item-enter grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1.5 sm:gap-3 sm:p-2"
-                    style={{ "--stagger-item-delay": `${Math.min(eventIndex * 32, 180)}ms` } as CSSProperties}
+                    className={`stagger-item-enter stagger-delay-${Math.min(eventIndex, 7)} grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1.5 sm:gap-3 sm:p-2`}
                   >
                     <span className={`h-2.5 w-2.5 rounded-full sm:h-3 sm:w-3 ${event.color}`} />
                     <div className="min-w-0">

@@ -47,8 +47,9 @@ export function FreshVsProcessedCard({ ratio }: { ratio?: { fresh: number; proce
                 strokeWidth={12}
                 strokeLinecap="round"
                 strokeDasharray={`${freshStroke} ${circumference - freshStroke}`}
+                strokeDashoffset={animated ? 0 : circumference}
                 transform={`rotate(-90)`}
-                style={{ transition: "stroke-dashoffset 700ms cubic-bezier(.2,.9,.3,1)", strokeDashoffset: animated ? 0 : circumference }}
+                className="eco-fresh-ring"
               />
 
               {/* center label */}
@@ -81,7 +82,9 @@ export function FreshVsProcessedCard({ ratio }: { ratio?: { fresh: number; proce
 
           <div className="mt-4">
             <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-              <div style={{ width: `${fresh}%` }} className="h-2 rounded-full bg-emerald-400 transition-width" />
+              <svg className="h-2 w-full text-emerald-400" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+                <rect width={Math.max(0, Math.min(100, fresh))} height="8" rx="4" fill="currentColor" />
+              </svg>
             </div>
             <div className="mt-3 text-sm text-slate-600">{fresh >= 60 ? "Bon équilibre — continuez ainsi !" : "Augmentez les produits frais dans vos repas."}</div>
           </div>

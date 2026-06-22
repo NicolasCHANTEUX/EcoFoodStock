@@ -26,6 +26,7 @@ Objectif : pouvoir restaurer EcoFoodStock sans improviser le jour ou la producti
 5. Lancer les tests d'integration Supabase contre staging.
 6. Verifier manuellement : inscription, connexion, ajout produit, consommation, undo, invitation foyer et suppression de compte.
 7. Documenter la date, le dump utilise, les commandes executees, les erreurs et la duree.
+8. Renseigner `ECOFOODSTOCK_RESTORE_TESTED_AT` avec la date ISO de cet exercice.
 
 ## Restauration production
 
@@ -41,3 +42,5 @@ Objectif : pouvoir restaurer EcoFoodStock sans improviser le jour ou la producti
 ## Critere de validation pre-production
 
 La checklist securite peut passer a "restauration testee" uniquement si une restauration staging a ete effectuee avec succes dans les 30 derniers jours et si la duree de reprise est connue.
+
+Apres verification hebdomadaire des backups, renseigner `ECOFOODSTOCK_BACKUPS_ENABLED=true` et `ECOFOODSTOCK_BACKUP_VERIFIED_AT` avec la date ISO du controle. `npm run security:prod-check` refuse une verification de backup vieille de plus de 8 jours ou un test de restauration vieux de plus de 31 jours.

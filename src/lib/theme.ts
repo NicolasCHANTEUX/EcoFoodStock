@@ -22,5 +22,4 @@ export function applyThemePreference(preference: ThemePreference) {
   const resolvedTheme = resolveThemePreference(preference);
   document.documentElement.dataset.theme = resolvedTheme;
   document.documentElement.dataset.themePreference = preference;
-  document.documentElement.style.colorScheme = resolvedTheme;
 }

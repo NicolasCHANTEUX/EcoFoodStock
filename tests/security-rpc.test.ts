@@ -150,6 +150,7 @@ test("sensitive API routes use the distributed rate limiter", () => {
     "src/app/api/account/export/route.ts",
     "src/app/api/account/legal-consent/route.ts",
     "src/app/api/auth/signup/route.ts",
+    "src/app/api/health/summary/route.ts",
     "src/app/api/products/lookup/[barcode]/route.ts",
     "src/app/api/images/route.ts",
     "src/app/api/household/invite/route.ts",
@@ -205,6 +206,22 @@ test("high-risk account routes use server-owned legal consent and generic client
   assertNotIncludes(householdAccess, "String(error) },", "household access");
 });
 
+test("health summary is rate-limited and never exposes raw server errors", () => {
+  const healthSummaryRoute = readProjectFile("src/app/api/health/summary/route.ts");
+
+  assertIncludes(healthSummaryRoute, 'scope: "health_summary:user"', "health summary route");
+  assertIncludes(healthSummaryRoute, 'scope: "health_summary:household"', "health summary route");
+  assertIncludes(healthSummaryRoute, 'scope: "health_summary:ip"', "health summary route");
+  assertIncludes(healthSummaryRoute, "health.summary_failed", "health summary route");
+  assertIncludes(
+    healthSummaryRoute,
+    "Impossible de charger le résumé santé pour le moment.",
+    "health summary route"
+  );
+  assertNotIncludes(healthSummaryRoute, "error instanceof Error ? error.message", "health summary route");
+  assertNotIncludes(healthSummaryRoute, "String(error)", "health summary route");
+});
+
 test("CSP can be switched to a nonce-based strict script policy", () => {
   const nextConfig = readProjectFile("next.config.ts");
   const middleware = readProjectFile("src/middleware.ts");
@@ -221,8 +238,17 @@ test("CSP can be switched to a nonce-based strict script policy", () => {
   assertIncludes(layout, "nonce={nonce}", "root layout CSP nonce");
   assertIncludes(csp, "`script-src 'self' 'nonce-${nonce}'", "strict CSP helper");
   assertNotIncludes(csp, "script-src 'self' 'unsafe-inline'", "strict CSP helper");
-  assertIncludes(envExample, "ECOFOODSTOCK_STRICT_CSP=false", "env example");
+  assertIncludes(envExample, "ECOFOODSTOCK_STRICT_CSP=true", "env example");
+  assertIncludes(csp, "`style-src 'self' 'nonce-${nonce}'`", "strict CSP helper");
+  assertNotIncludes(csp, "unsafe-inline", "strict CSP helper");
   assertIncludes(securityDoc, "ECOFOODSTOCK_STRICT_CSP=true", "security documentation");
+
+  for (const absolutePath of listSourceFiles(path.join(root, "src"))) {
+    const source = readFileSync(absolutePath, "utf8");
+    const relativePath = path.relative(root, absolutePath).replace(/\\/g, "/");
+    assertNotIncludes(source, "style={{", `${relativePath} strict CSP compatibility`);
+    assertNotIncludes(source, ".style.", `${relativePath} strict CSP compatibility`);
+  }
 });
 
 test("service-role and backup operations have guardrails and a restore runbook", () => {
@@ -231,6 +257,8 @@ test("service-role and backup operations have guardrails and a restore runbook",
   const envExample = readProjectFile(".env.example");
   const securityDoc = readProjectFile("docs/securite-production.md");
   const backupRunbook = readProjectFile("docs/procedure-backup-restauration-supabase.md");
+  const productionSecurityCheck = readProjectFile("scripts/check-production-security.mjs");
+  const packageJson = readProjectFile("package.json");
   const docsReadme = readProjectFile("docs/README.md");
 
   assertIncludes(supabaseServer, "assertServerOnlySupabaseServiceRoleConfig", "Supabase server client");
@@ -243,6 +271,10 @@ test("service-role and backup operations have guardrails and a restore runbook",
   assertIncludes(backupRunbook, "SUPABASE_SERVICE_ROLE_KEY", "backup restore runbook");
   assertIncludes(backupRunbook, "30 derniers jours", "backup restore runbook");
   assertIncludes(docsReadme, "procedure-backup-restauration-supabase.md", "docs README");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_BACKUPS_ENABLED", "production security check");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_BACKUP_VERIFIED_AT", "production security check");
+  assertIncludes(productionSecurityCheck, "ECOFOODSTOCK_RESTORE_TESTED_AT", "production security check");
+  assertIncludes(packageJson, '"security:prod-check"', "package scripts");
 
   const allowedServiceRoleSources = new Set([
     "src/lib/security/secrets.ts",

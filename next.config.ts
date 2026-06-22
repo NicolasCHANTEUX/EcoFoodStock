@@ -2,9 +2,10 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
-const strictCspEnabled = ["1", "true", "yes", "on"].includes(
-  process.env.ECOFOODSTOCK_STRICT_CSP?.trim().toLowerCase() ?? ""
-);
+const strictCspSetting = process.env.ECOFOODSTOCK_STRICT_CSP?.trim().toLowerCase();
+const strictCspEnabled = strictCspSetting
+  ? ["1", "true", "yes", "on"].includes(strictCspSetting)
+  : !isDevelopment || process.env.VERCEL_ENV === "production";
 const configuredBuildCpus = Number.parseInt(process.env.ECOFOODSTOCK_BUILD_CPUS ?? "", 10);
 const buildCpus = Number.isInteger(configuredBuildCpus) && configuredBuildCpus > 0 ? configuredBuildCpus : undefined;
 const contentSecurityPolicy = [

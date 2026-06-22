@@ -26,19 +26,20 @@ Avant mise en production :
 - exporter regulierement le schema et verifier que les migrations rejouent depuis zero ;
 - tester au moins une restauration avant d'ouvrir l'application a des utilisateurs reels.
 - suivre la procedure detaillee dans [procedure-backup-restauration-supabase.md](./procedure-backup-restauration-supabase.md).
+- executer `npm run security:prod-check` dans le pipeline de deploiement apres avoir renseigne les attestations de backup et de restauration.
 
 ## CSP et headers
 
 Les headers actuels incluent CSP, `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, Permissions-Policy et HSTS en production.
 
-Par defaut, la CSP compatible garde `unsafe-inline` pour les scripts/styles afin de ne pas casser Next.js App Router et les scripts d'initialisation. Pour une validation pre-production plus stricte, activer `ECOFOODSTOCK_STRICT_CSP=true` au build et au runtime :
+La CSP stricte est activee par defaut en production et `ECOFOODSTOCK_STRICT_CSP=true` est la valeur recommandee en staging et production :
 
 - le middleware genere un nonce par requete ;
 - le nonce est propage au layout via `x-nonce` ;
-- `script-src` utilise `nonce-...` et retire `unsafe-inline` ;
+- `script-src` et `style-src` utilisent `nonce-...` et retirent `unsafe-inline` ;
 - verifier Sentry, service worker, PWA, installation mobile et hydration sur mobile avant de garder le flag actif.
 
-`style-src 'unsafe-inline'` reste autorise pour les styles React dynamiques actuels. Si l'application doit viser une CSP encore plus stricte, il faudra remplacer les styles inline restants par des classes CSS ou des variables controlees.
+Les anciens styles React inline ont ete remplaces par des classes CSS et des attributs SVG. Le mode compatible avec `unsafe-inline` ne reste disponible que si la CSP stricte est explicitement desactivee pour un diagnostic local.
 
 Le mode nonce lit les headers de requete dans le layout et rend donc les pages dynamiques. Valider l'impact performance et cache sur staging avant activation definitive.
 
@@ -51,4 +52,5 @@ Le mode nonce lit les headers de requete dans le layout et rend donc les pages d
 - [ ] Restauration testee.
 - [ ] Alertes Sentry actives.
 - [ ] Workflow GitHub vert, y compris integration Supabase.
-- [ ] `ECOFOODSTOCK_STRICT_CSP=true` valide en staging si la CSP stricte est requise.
+- [ ] `ECOFOODSTOCK_STRICT_CSP=true` valide en staging et configure en production.
+- [ ] `npm run security:prod-check` vert avec des dates d'attestation reelles.

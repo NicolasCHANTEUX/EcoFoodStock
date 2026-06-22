@@ -43,7 +43,6 @@ export default async function RootLayout({
       lang="fr"
       data-theme="light"
       data-theme-preference="system"
-      style={{ colorScheme: "light" }}
       suppressHydrationWarning
     >
       <body>
@@ -59,11 +58,9 @@ export default async function RootLayout({
                   var theme = isDark ? "dark" : "light";
                   document.documentElement.dataset.theme = theme;
                   document.documentElement.dataset.themePreference = preference;
-                  document.documentElement.style.colorScheme = theme;
                 } catch {
                   document.documentElement.dataset.theme = "light";
                   document.documentElement.dataset.themePreference = "system";
-                  document.documentElement.style.colorScheme = "light";
                 }
               })();
             `

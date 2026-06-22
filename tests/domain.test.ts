@@ -7,7 +7,7 @@ import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lin
 import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
 import { getClientIp } from "@/lib/rate-limit";
 import { createLogRecord, getOrCreateRequestId, sanitizeLogContext } from "@/lib/observability/logger";
-import { buildStrictContentSecurityPolicy } from "@/lib/security/csp";
+import { buildStrictContentSecurityPolicy, isStrictCspEnabled } from "@/lib/security/csp";
 import { assertServerOnlySupabaseServiceRoleConfig } from "@/lib/security/secrets";
 import {
   SETTINGS_PROFILE_STORAGE_KEY,
@@ -119,7 +119,8 @@ test("strict CSP uses script nonces and service-role secrets fail closed", () =>
   const csp = buildStrictContentSecurityPolicy("nonce-test");
 
   assert.match(csp, /script-src 'self' 'nonce-nonce-test'/);
-  assert.equal(csp.includes("script-src 'self' 'unsafe-inline'"), false);
+  assert.match(csp, /style-src 'self' 'nonce-nonce-test'/);
+  assert.equal(csp.includes("unsafe-inline"), false);
   assert.ok(csp.includes("frame-ancestors 'none'"));
 
   assert.throws(
@@ -139,6 +140,30 @@ test("strict CSP uses script nonces and service-role secrets fail closed", () =>
       }),
     /different/
   );
+});
+
+test("strict CSP is enabled by default in production", () => {
+  const originalCsp = process.env.ECOFOODSTOCK_STRICT_CSP;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalVercelEnv = process.env.VERCEL_ENV;
+
+  try {
+    delete process.env.ECOFOODSTOCK_STRICT_CSP;
+    delete process.env.VERCEL_ENV;
+    restoreEnvValue("NODE_ENV", "production");
+    assert.equal(isStrictCspEnabled(), true);
+
+    restoreEnvValue("NODE_ENV", "development");
+    assert.equal(isStrictCspEnabled(), false);
+
+    restoreEnvValue("NODE_ENV", "production");
+    process.env.ECOFOODSTOCK_STRICT_CSP = "false";
+    assert.equal(isStrictCspEnabled(), false);
+  } finally {
+    restoreEnvValue("ECOFOODSTOCK_STRICT_CSP", originalCsp);
+    restoreEnvValue("NODE_ENV", originalNodeEnv);
+    restoreEnvValue("VERCEL_ENV", originalVercelEnv);
+  }
 });
 
 test("Open Food Facts cache deduplicates concurrent lookups and repeated searches", async () => {

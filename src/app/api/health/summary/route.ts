@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestLogContext, logError } from "@/lib/observability/logger";
+import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 
 type ProductNutritionRow = {
@@ -56,11 +57,40 @@ export async function GET(req: Request) {
     return access.response;
   }
 
-  const { householdId, supabase } = access;
+  const { context, householdId, supabase } = access;
+  const rateLimit = await checkRateLimits([
+    {
+      scope: "health_summary:ip",
+      subject: rateLimitSubject(getClientIp(req)),
+      limit: 240,
+      windowSeconds: 10 * 60
+    },
+    ...(context.appUserId
+      ? [
+          {
+            scope: "health_summary:user",
+            subject: rateLimitSubject(context.appUserId),
+            limit: 120,
+            windowSeconds: 10 * 60
+          }
+        ]
+      : []),
+    {
+      scope: "health_summary:household",
+      subject: rateLimitSubject(householdId),
+      limit: 240,
+      windowSeconds: 10 * 60
+    }
+  ]);
+
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
+
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    const { data: movements } = await supabase
+    const { data: movements, error: movementsError } = await supabase
       .from("inventory_movements")
       .select(
         "product_id, quantity_delta, unit, created_at, products(id, name, is_raw_fresh, is_seasonal, category, product_nutrition(per_unit, calories_kcal, protein_g, carbs_g, fat_g))"
@@ -68,6 +98,10 @@ export async function GET(req: Request) {
       .eq("household_id", householdId)
       .in("type", ["consume", "cook"])
       .gte("created_at", since);
+
+    if (movementsError) {
+      throw movementsError;
+    }
 
     const mac = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
     const movementRows = Array.isArray(movements) ? (movements as unknown as MovementRow[]) : [];
@@ -91,11 +125,15 @@ export async function GET(req: Request) {
       mac.fat_g += safeNumber(nutrition.fat_g) * factor;
     }
 
-    const { data: batches } = await supabase
+    const { data: batches, error: batchesError } = await supabase
       .from("inventory_batches")
       .select("quantity_remaining, products(id, is_raw_fresh, is_seasonal, category, name)")
       .eq("household_id", householdId)
       .eq("status", "active");
+
+    if (batchesError) {
+      throw batchesError;
+    }
 
     const inventoryRows = Array.isArray(batches) ? (batches as unknown as BatchRow[]) : [];
     let totalQty = 0;
@@ -163,8 +201,10 @@ export async function GET(req: Request) {
       seasonalityScore
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
     logError("health.summary_failed", error, getRequestLogContext(req, "/api/health/summary"));
-    return NextResponse.json({ ok: false, message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: "Impossible de charger le résumé santé pour le moment." },
+      { status: 500 }
+    );
   }
 }

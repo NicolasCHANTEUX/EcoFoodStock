@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, MinusCircle, Plus, Trash2, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -222,8 +222,7 @@ export function InventoryView() {
             {filteredInventory.map((item, index) => (
               <div
                 key={item.id}
-                className="stagger-item-enter rounded-lg border border-slate-200 px-3 py-2 sm:grid sm:grid-cols-[auto_1fr_auto_auto] sm:items-center sm:gap-3 sm:py-3"
-                style={{ "--stagger-item-delay": `${Math.min(index * 34, 220)}ms` } as CSSProperties}
+                className={`stagger-item-enter stagger-delay-${Math.min(index, 7)} rounded-lg border border-slate-200 px-3 py-2 sm:grid sm:grid-cols-[auto_1fr_auto_auto] sm:items-center sm:gap-3 sm:py-3`}
               >
                 <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 sm:contents">
                   <ProductThumbnail name={item.name} imageUrl={item.imageUrl} fallbackLabel={item.icon} />

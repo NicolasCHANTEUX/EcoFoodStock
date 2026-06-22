@@ -19,12 +19,18 @@ export function TrendChart({ stats }: { stats?: Macronutrients }) {
       <div className="mt-4">
         {isSeries ? (
           <div className="flex items-end gap-3 h-40">
-            {data.map((v: number, i: number) => (
+            {data.map((v: number, i: number) => {
+              const height = Math.max(0, Math.min(100, (v / max) * 100));
+
+              return (
               <div key={i} className="flex-1 text-center">
-                <div className="mx-auto w-10 rounded-sm bg-amber-500" style={{ height: `${(v / max) * 100}%` }} />
+                <svg className="mx-auto h-40 w-10 text-amber-500" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <rect x="0" y={100 - height} width="100" height={height} rx="5" fill="currentColor" />
+                </svg>
                 <div className="mt-2 text-xs text-slate-600">{["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][i]}</div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="flex items-end gap-6 h-40">
@@ -34,7 +40,16 @@ export function TrendChart({ stats }: { stats?: Macronutrients }) {
               { label: "Lipides", value: fat, color: "bg-amber-600" }
             ].map((b, i) => (
               <div key={i} className="flex-1 text-center">
-                <div className={`mx-auto w-12 rounded-sm ${b.color}`} style={{ height: `${(b.value / max) * 100}%` }} />
+                <svg className="mx-auto h-40 w-12 text-amber-500" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <rect
+                    x="0"
+                    y={100 - Math.max(0, Math.min(100, (b.value / max) * 100))}
+                    width="100"
+                    height={Math.max(0, Math.min(100, (b.value / max) * 100))}
+                    rx="5"
+                    fill="currentColor"
+                  />
+                </svg>
                 <div className="mt-2 text-sm font-medium">{b.label}</div>
                 <div className="text-xs text-slate-600">{b.value ?? "—"}</div>
               </div>

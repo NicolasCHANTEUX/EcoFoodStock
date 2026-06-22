@@ -6,7 +6,13 @@ function isEnabled(value: string | undefined) {
 }
 
 export function isStrictCspEnabled() {
-  return isEnabled(process.env.ECOFOODSTOCK_STRICT_CSP);
+  const configuredValue = process.env.ECOFOODSTOCK_STRICT_CSP?.trim();
+
+  if (configuredValue) {
+    return isEnabled(configuredValue);
+  }
+
+  return process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
 }
 
 export function createCspNonce() {
@@ -26,7 +32,7 @@ export function buildStrictContentSecurityPolicy(nonce: string) {
   const directives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline'",
+    `style-src 'self' 'nonce-${nonce}'`,
     `img-src 'self' data: blob: ${OFF_IMAGE_HOSTS}`,
     `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://world.openfoodfacts.org ${OFF_IMAGE_HOSTS}${
       isDevelopment ? " ws: wss:" : ""

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Plus, RotateCcw, ShoppingCart, Trash2, X } from "lucide-react";
 import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
 import { Button } from "@/components/ui/Button";
@@ -530,8 +530,7 @@ export function ShoppingView() {
             {visibleSuggestions.map((item, index) => (
               <div
                 key={item.id}
-                className="stagger-item-enter flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 p-3"
-                style={{ "--stagger-item-delay": `${Math.min(index * 34, 220)}ms` } as CSSProperties}
+                className={`stagger-item-enter stagger-delay-${Math.min(index, 7)} flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 p-3`}
               >
                 <ProductThumbnail
                   name={item.label}

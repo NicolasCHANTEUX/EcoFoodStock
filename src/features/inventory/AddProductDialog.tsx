@@ -86,14 +86,13 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "contain";
+    const wasAlreadyLocked = document.body.classList.contains("eco-dialog-open");
+    document.body.classList.add("eco-dialog-open");
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+      if (!wasAlreadyLocked) {
+        document.body.classList.remove("eco-dialog-open");
+      }
     };
   }, [open]);
 

@@ -251,7 +251,9 @@ export function OnboardingFlow() {
         </div>
 
         <div className="mb-8 h-2 rounded-full bg-slate-200">
-          <div className="h-2 rounded-full bg-slate-950 transition-all" style={{ width: `${(step / 5) * 100}%` }} />
+          <svg className="h-2 w-full text-slate-950" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+            <rect width={(step / 5) * 100} height="8" rx="4" fill="currentColor" />
+          </svg>
         </div>
 
         <Card className="p-8 shadow-soft">
