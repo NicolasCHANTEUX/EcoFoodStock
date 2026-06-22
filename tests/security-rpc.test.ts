@@ -201,6 +201,10 @@ test("high-risk account routes use server-owned legal consent and generic client
   assertIncludes(deleteRoute, "verifyAccountDeletionReauthentication", "delete account route");
   assertIncludes(deleteRoute, "signInWithPassword", "delete account route");
   assertIncludes(deleteRoute, "RECENT_OAUTH_REAUTH_WINDOW_MS", "delete account route");
+  assertIncludes(deleteRoute, "isProductionEnvironment()", "delete account production RPC requirement");
+  assertIncludes(deleteRoute, "account.delete_rpc_required", "delete account production RPC requirement");
+  assertIncludes(deleteRoute, "{ status: 503 }", "delete account production RPC requirement");
+  assertIncludes(deleteRoute, "account.delete_rpc_fallback_development", "delete account development fallback");
   assertNotIncludes(deleteRoute, "error: error instanceof Error", "delete account route");
   assertNotIncludes(onboardingRoute, "String(error) },", "onboarding route");
   assertNotIncludes(householdAccess, "String(error) },", "household access");
@@ -213,6 +217,8 @@ test("health summary is rate-limited and never exposes raw server errors", () =>
   assertIncludes(healthSummaryRoute, 'scope: "health_summary:household"', "health summary route");
   assertIncludes(healthSummaryRoute, 'scope: "health_summary:ip"', "health summary route");
   assertIncludes(healthSummaryRoute, "health.summary_failed", "health summary route");
+  assertIncludes(healthSummaryRoute, "estimated: true", "health summary estimates");
+  assertIncludes(healthSummaryRoute, "estimationNotice", "health summary estimates");
   assertIncludes(
     healthSummaryRoute,
     "Impossible de charger le résumé santé pour le moment.",
@@ -462,6 +468,7 @@ test("invitation RPCs are atomic and enforce invitation ownership rules", () => 
 
 test("settings history does not store sensitive profile snapshots", () => {
   const settingsRoute = readProjectFile("src/app/api/settings/route.ts");
+  const settingsView = readProjectFile("src/features/settings/SettingsView.tsx");
   const backfillSql = readProjectFile("sql/backfill-history-can-undo.sql");
 
   assertIncludes(settingsRoute, "changed_fields: changedFields", "settings history");
@@ -470,6 +477,11 @@ test("settings history does not store sensitive profile snapshots", () => {
   assertNotIncludes(settingsRoute, "previous_profile", "settings history");
   assertNotIncludes(settingsRoute, "next_profile", "settings history");
   assertNotIncludes(settingsRoute, "original_error", "settings history");
+  assertIncludes(settingsRoute, "let warning: string | undefined", "settings history partial failure");
+  assertIncludes(settingsRoute, "...(warning ? { warning } : {})", "settings history partial failure");
+  assertNotIncludes(settingsRoute, "{ ok: false, message: \"Paramètres enregistrés", "settings history partial failure");
+  assertIncludes(settingsView, "données des foyers auxquels vous appartenez", "account export disclosure");
+  assertIncludes(settingsView, "peuvent concerner d'autres membres", "account export disclosure");
 
   assertIncludes(backfillSql, "coalesce(metadata->>'section', '') <> 'settings'", "history backfill");
   assertNotIncludes(backfillSql, "coalesce(metadata->>'section', '') = 'settings'", "history backfill");

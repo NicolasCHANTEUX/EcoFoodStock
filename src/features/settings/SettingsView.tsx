@@ -112,7 +112,8 @@ export function SettingsView() {
   const [clearingCache, setClearingCache] = useState(false);
   const [exportingData, setExportingData] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [accountActionStatus, setAccountActionStatus] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [deleteAccountStatus, setDeleteAccountStatus] = useState<string | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const baselineRef = useRef<SettingsProfile>(defaultSettingsProfile);
 
@@ -223,6 +224,7 @@ export function SettingsView() {
         historyEventCreated?: boolean;
         message?: string;
         error?: string;
+        warning?: string;
       } | null;
 
       if (!settingsResponse.ok) {
@@ -233,7 +235,12 @@ export function SettingsView() {
       baselineRef.current = savedProfile;
       persistProfileLocally(savedProfile);
       setProfile(savedProfile);
-      setStatus(settingsPayload?.historyEventCreated ? "Paramètres enregistrés et ajoutés à l'historique." : "Paramètres enregistrés.");
+      setStatus(
+        settingsPayload?.warning ??
+          (settingsPayload?.historyEventCreated
+            ? "Paramètres enregistrés et ajoutés à l'historique."
+            : "Paramètres enregistrés.")
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Impossible d'enregistrer les paramètres pour le moment.");
     } finally {
@@ -374,7 +381,7 @@ export function SettingsView() {
 
   async function exportAccountData() {
     setExportingData(true);
-    setAccountActionStatus(null);
+    setExportStatus(null);
 
     try {
       const headers = await getBrowserAuthHeaders();
@@ -403,9 +410,9 @@ export function SettingsView() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setAccountActionStatus("Export CSV téléchargé.");
+      setExportStatus("Export CSV téléchargé.");
     } catch (error) {
-      setAccountActionStatus((error as Error).message ?? "Impossible d'exporter les données pour le moment.");
+      setExportStatus((error as Error).message ?? "Impossible d'exporter les données pour le moment.");
     } finally {
       setExportingData(false);
     }
@@ -413,7 +420,7 @@ export function SettingsView() {
 
   async function deleteAccount() {
     setDeletingAccount(true);
-    setAccountActionStatus(null);
+    setDeleteAccountStatus(null);
 
     try {
       const headers = await getBrowserAuthHeaders();
@@ -452,7 +459,7 @@ export function SettingsView() {
       setConfirmState(null);
       router.replace(routes.login);
     } catch (error) {
-      setAccountActionStatus((error as Error).message ?? "Impossible de supprimer le compte pour le moment.");
+      setDeleteAccountStatus((error as Error).message ?? "Impossible de supprimer le compte pour le moment.");
     } finally {
       setDeletingAccount(false);
     }
@@ -774,8 +781,8 @@ export function SettingsView() {
           <ActionPanel
             icon={Download}
             title="Exporter mes données"
-            description="Téléchargez un fichier CSV avec votre profil, vos préférences, votre inventaire, vos courses et votre historique."
-            status={accountActionStatus}
+            description="Téléchargez votre profil et les données des foyers auxquels vous appartenez (inventaire, courses et historique), qui peuvent concerner d'autres membres."
+            status={exportStatus}
             action={
               <Button
                 variant="secondary"
@@ -813,14 +820,14 @@ export function SettingsView() {
             icon={Trash2}
             title="Supprimer mon compte définitivement"
             description="Cette action supprime votre compte, vos données personnelles et votre foyer si vous en êtes le seul membre."
-            status={accountActionStatus}
+            status={deleteAccountStatus}
             action={
               <Button
                 variant="danger"
                 type="button"
                 className="gap-2 sm:shrink-0"
                 onClick={() => {
-                  setAccountActionStatus(null);
+                  setDeleteAccountStatus(null);
                   setConfirmState({ type: "delete-account", step: "intro", phrase: "", password: "" });
                 }}
                 disabled={deletingAccount || exportingData || signingOut || clearingCache}
@@ -1013,7 +1020,7 @@ export function SettingsView() {
               />
             </label>
 
-            {accountActionStatus ? <p className="text-sm font-medium text-rose-600">{accountActionStatus}</p> : null}
+            {deleteAccountStatus ? <p className="text-sm font-medium text-rose-600">{deleteAccountStatus}</p> : null}
           </div>
         ) : null}
       </ConfirmDialog>

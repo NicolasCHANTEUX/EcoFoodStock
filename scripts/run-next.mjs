@@ -1,10 +1,21 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
 const nextBin = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
 const nextArgs = process.argv.slice(2);
+
+if (process.env.ECOFOODSTOCK_CLEAN_PLAYWRIGHT_NEXT_DIR === "true") {
+  const distPath = path.resolve(process.cwd(), ".next");
+
+  if (path.dirname(distPath) !== path.resolve(process.cwd())) {
+    console.error("Refus de nettoyer un cache Next.js hors du projet.");
+    process.exit(1);
+  }
+
+  rmSync(distPath, { force: true, recursive: true, maxRetries: 3, retryDelay: 200 });
+}
 
 if (!existsSync(nextBin)) {
   console.error("Next.js CLI introuvable. Lancez npm install puis reessayez.");

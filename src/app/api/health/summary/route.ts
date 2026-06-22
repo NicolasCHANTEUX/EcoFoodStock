@@ -190,6 +190,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      estimated: true,
+      estimationNotice:
+        "Estimations indicatives basées sur les mouvements de stock et les données nutritionnelles disponibles.",
       macronutrients: {
         calories: Math.round(mac.calories),
         protein_g: Math.round(mac.protein_g),

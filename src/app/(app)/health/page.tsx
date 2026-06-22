@@ -4,7 +4,7 @@ export default function HealthPage() {
   return (
     <ComingSoon
       title="Suivi santé"
-      description="Le module santé avancée est prévu pour le MVP 2."
+      description="Le module santé avancée est prévu pour le MVP 2. Ses futurs indicateurs nutritionnels seront présentés comme des estimations."
     />
   );
 }

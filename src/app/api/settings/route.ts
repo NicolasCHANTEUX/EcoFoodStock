@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getRequestLogContext, logError } from "@/lib/observability/logger";
+import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -168,6 +168,7 @@ export async function POST(req: Request) {
   }
 
   let historyEventCreated = false;
+  let warning: string | undefined;
 
   if (changedFields.length > 0) {
     const activityError = await createSettingsHistoryEvent(supabase, {
@@ -178,20 +179,18 @@ export async function POST(req: Request) {
     });
 
     if (activityError) {
-      logError("settings.history_event_create_failed", activityError, {
+      logWarn("settings.history_event_create_failed", "Settings were saved but their history event could not be created", {
         ...getRequestLogContext(req, "/api/settings"),
-        operation: "create_settings_history_event"
+        operation: "create_settings_history_event",
+        error: activityError
       });
-      return NextResponse.json(
-        { ok: false, message: "Paramètres enregistrés, mais l'historique n'a pas pu être mis à jour." },
-        { status: 500 }
-      );
+      warning = "Paramètres enregistrés, mais l'historique n'a pas pu être mis à jour.";
+    } else {
+      historyEventCreated = true;
     }
-
-    historyEventCreated = true;
   }
 
-  return NextResponse.json({ ok: true, profile, historyEventCreated });
+  return NextResponse.json({ ok: true, profile, historyEventCreated, ...(warning ? { warning } : {}) });
 }
 
 async function createSettingsHistoryEvent(

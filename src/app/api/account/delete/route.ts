@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getRequestLogContext, logError, logWarn } from "@/lib/observability/logger";
 import { checkRateLimits, createRateLimitResponse, getClientIp, rateLimitSubject } from "@/lib/rate-limit";
+import { isProductionEnvironment } from "@/lib/supabase/account-context";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { createSupabasePublicServerClient } from "@/lib/supabase/server";
 
@@ -97,9 +98,26 @@ export async function DELETE(request: Request) {
 
   try {
     if (context.appUserId) {
-      const rpcDeleted = await tryDeleteApplicationAccountWithRpc(supabase, context.appUserId);
+      const rpcDeletion = await tryDeleteApplicationAccountWithRpc(supabase, context.appUserId);
 
-      if (!rpcDeleted) {
+      if (!rpcDeletion.ok && isProductionEnvironment()) {
+        logError("account.delete_rpc_required", new Error(rpcDeletion.error.message), {
+          ...getRequestLogContext(request, "/api/account/delete"),
+          operation: "delete_application_account_data",
+          code: rpcDeletion.error.code
+        });
+        return NextResponse.json(
+          { ok: false, message: "Suppression temporairement indisponible. Réessayez plus tard." },
+          { status: 503 }
+        );
+      }
+
+      if (!rpcDeletion.ok) {
+        logWarn("account.delete_rpc_fallback_development", "Account deletion RPC failed; using development fallback", {
+          operation: "delete_application_account_data",
+          code: rpcDeletion.error.code,
+          error: rpcDeletion.error.message
+        });
         await deleteApplicationAccount(supabase, context.appUserId);
       }
     }
@@ -129,18 +147,10 @@ async function tryDeleteApplicationAccountWithRpc(supabase: SupabaseClient, appU
   });
 
   if (!error) {
-    return true;
+    return { ok: true as const };
   }
 
-  if (!isMissingRpcError(error.message)) {
-    logWarn("account.delete_rpc_fallback", "Account deletion RPC failed; using application fallback", {
-      operation: "delete_application_account_data",
-      code: error.code,
-      error: error.message
-    });
-  }
-
-  return false;
+  return { ok: false as const, error };
 }
 
 async function deleteApplicationAccount(supabase: SupabaseClient, appUserId: string) {
@@ -318,13 +328,4 @@ function hasRecentOAuthSignIn(lastSignInAt: string | undefined, now = Date.now()
 function isMissingRelationError(message: string) {
   const lowerMessage = message.toLowerCase();
   return lowerMessage.includes("relation") && lowerMessage.includes("does not exist");
-}
-
-function isMissingRpcError(message?: string) {
-  const normalizedMessage = message?.toLowerCase() ?? "";
-  return (
-    normalizedMessage.includes("could not find the function") ||
-    normalizedMessage.includes("schema cache") ||
-    normalizedMessage.includes("delete_application_account_data")
-  );
 }
