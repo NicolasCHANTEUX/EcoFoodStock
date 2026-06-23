@@ -249,6 +249,19 @@ test("SEO metadata and protected app shell support faster initial rendering", ()
   assertNotIncludes(authGate, "catch {\n        checkedAccessTokenRef.current = null;\n        clearBrowserAccountStatusCache();\n        setAuthorized(false);", "AuthGate status retry should not blank an existing session");
 });
 
+test("desktop sidebar keeps contrast-safe text and action colors", () => {
+  const sidebar = readProjectFile("src/components/layout/Sidebar.tsx");
+
+  assertIncludes(sidebar, "bg-brand-700 text-white lg:flex", "desktop sidebar contrast");
+  assertIncludes(sidebar, "bg-brand-900 px-4 py-4 text-sm font-semibold text-white", "desktop sidebar scan action");
+  assertNotIncludes(sidebar, "bg-brand-600 text-white lg:flex", "desktop sidebar contrast");
+  assertNotIncludes(sidebar, "text-white/60", "desktop sidebar contrast");
+  assertNotIncludes(sidebar, "text-white/70", "desktop sidebar contrast");
+  assertNotIncludes(sidebar, "text-white/80", "desktop sidebar contrast");
+  assertNotIncludes(sidebar, "text-white/90", "desktop sidebar contrast");
+  assertNotIncludes(sidebar, "bg-white/15 px-4 py-4 text-sm font-semibold", "desktop sidebar scan action");
+});
+
 test("CSP can be switched to a nonce-based strict script policy", () => {
   const nextConfig = readProjectFile("next.config.ts");
   const middleware = readProjectFile("src/middleware.ts");

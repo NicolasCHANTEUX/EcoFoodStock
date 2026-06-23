@@ -33,19 +33,19 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-brand-600 text-white lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-brand-700 text-white lg:flex">
         <div className="flex h-20 items-center gap-3 px-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-900/35">
             <Box className="h-5 w-5" />
           </div>
           <div>
             <p className="text-lg font-bold">EcoFoodStock</p>
-            <p className="text-xs text-white/70">Foyer partagé</p>
+            <p className="text-xs text-white">Foyer partagé</p>
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 px-4 py-6">
-          <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-wide text-white/60">
+          <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-wide text-white">
             Navigation
           </p>
           {navItems.map((item) => {
@@ -64,7 +64,7 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition",
                   active && "bg-white text-brand-700 shadow-sm",
-                  !active && "text-white/90",
+                  !active && "text-white",
                   !active && "hover:bg-white/10"
                 )}
               >
@@ -86,7 +86,7 @@ export function Sidebar() {
                 startNavigationLoading();
               }
             }}
-            className="flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-4 text-sm font-semibold hover:bg-white/20"
+            className="flex items-center justify-center gap-2 rounded-xl bg-brand-900 px-4 py-4 text-sm font-semibold text-white hover:bg-brand-900/90"
           >
             <ScanBarcode className="h-5 w-5" />
             Scanner un produit
@@ -101,7 +101,7 @@ export function Sidebar() {
                 startNavigationLoading();
               }
             }}
-            className="flex items-center justify-center gap-2 text-xs text-white/80 hover:text-white"
+            className="flex items-center justify-center gap-2 text-xs text-white hover:text-brand-50"
           >
             <ClipboardList className="h-4 w-4" />
             Ajouter manuellement
