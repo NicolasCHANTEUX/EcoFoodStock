@@ -6,6 +6,7 @@ import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { getClientApiCacheScope, getPendingClientJsonRequest, readClientJsonCache, writeClientJsonCache } from "@/lib/client-api-cache";
 import { readStoredSettingsProfile, SETTINGS_PROFILE_STORAGE_KEY } from "@/lib/settings-storage";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
 import type { DietType } from "@/lib/settings";
@@ -15,6 +16,8 @@ const SETTINGS_STORAGE_KEY = SETTINGS_PROFILE_STORAGE_KEY;
 const SHOPPING_SUGGESTIONS_STORAGE_KEY = "ecofoodstock:shopping-suggestions-hidden";
 const SHOPPING_ITEM_IMAGES_STORAGE_KEY = "ecofoodstock:shopping-item-images";
 const SHOPPING_COMPLETION_DISMISSALS_STORAGE_KEY = "ecofoodstock:shopping-completion-dismissals";
+const SHOPPING_STATE_CACHE_KEY = "shopping-state:v1";
+const SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX = "shopping-suggestions:v1";
 const COMPLETED_SESSION_VISIBLE_MS = 24 * 60 * 60 * 1000;
 
 type ShoppingItemImageMap = Record<string, string>;
@@ -56,32 +59,56 @@ export function ShoppingView() {
   }, []);
 
   const loadShoppingState = useCallback(async () => {
+    let hasCachedPayload = false;
+
     setLoadingList(true);
     setShoppingError(null);
 
     try {
-      const response = await fetch("/api/shopping", {
-        cache: "no-store",
-        headers: await getBrowserAuthHeaders()
-      });
+      const authHeaders = await getBrowserAuthHeaders();
+      const cacheScope = await getClientApiCacheScope(authHeaders);
+      const cachedPayload = readClientJsonCache<ShoppingPayload>(SHOPPING_STATE_CACHE_KEY, cacheScope);
 
-      const payload = (await response.json()) as ShoppingPayload;
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.message ?? `HTTP ${response.status}`);
+      if (cachedPayload) {
+        hasCachedPayload = true;
+        applyShoppingPayload(cachedPayload, shoppingItemImagesRef.current);
+        setLoadingList(false);
       }
 
+      const payload = await getPendingClientJsonRequest<ShoppingPayload>(
+        `GET:/api/shopping:${cacheScope}`,
+        async () => {
+          const response = await fetch("/api/shopping", {
+            cache: "no-store",
+            headers: authHeaders
+          });
+
+          const nextPayload = (await response.json()) as ShoppingPayload;
+
+          if (!response.ok || !nextPayload.ok) {
+            throw new Error(nextPayload.message ?? `HTTP ${response.status}`);
+          }
+
+          return nextPayload;
+        }
+      );
+
+      writeClientJsonCache(SHOPPING_STATE_CACHE_KEY, cacheScope, payload);
       applyShoppingPayload(payload, shoppingItemImagesRef.current);
     } catch {
-      setShoppingError("Impossible de charger la liste de courses.");
-      setGroups([]);
-      setCompletedSession(null);
+      if (!hasCachedPayload) {
+        setShoppingError("Impossible de charger la liste de courses.");
+        setGroups([]);
+        setCompletedSession(null);
+      }
     } finally {
       setLoadingList(false);
     }
   }, [applyShoppingPayload]);
 
   const loadSuggestions = useCallback(async (forceRefresh = false) => {
+    let hasCachedPayload = false;
+
     try {
       setLoadingSuggestions(true);
       const currentDiet = readStoredDiet();
@@ -96,20 +123,42 @@ export function ShoppingView() {
       }
 
       const query = params.toString() ? `?${params.toString()}` : "";
+      const authHeaders = await getBrowserAuthHeaders();
+      const cacheScope = await getClientApiCacheScope(authHeaders);
+      const cacheKey = `${SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX}:${currentDiet ?? "default"}`;
 
-      const response = await fetch(`/api/shopping/suggestions${query}`, {
-        cache: "no-store",
-        headers: await getBrowserAuthHeaders()
-      });
+      if (!forceRefresh) {
+        const cachedPayload = readClientJsonCache<{ suggestions: ShoppingSuggestion[] }>(cacheKey, cacheScope);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        if (cachedPayload) {
+          hasCachedPayload = true;
+          setSuggestions(cachedPayload.suggestions ?? []);
+          setLoadingSuggestions(false);
+        }
       }
 
-      const payload = (await response.json()) as { suggestions: ShoppingSuggestion[] };
+      const payload = await getPendingClientJsonRequest<{ suggestions: ShoppingSuggestion[] }>(
+        `GET:/api/shopping/suggestions${query}:${cacheScope}`,
+        async () => {
+          const response = await fetch(`/api/shopping/suggestions${query}`, {
+            cache: forceRefresh ? "no-store" : "default",
+            headers: authHeaders
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          return (await response.json()) as { suggestions: ShoppingSuggestion[] };
+        }
+      );
+
+      writeClientJsonCache(cacheKey, cacheScope, payload);
       setSuggestions(payload.suggestions ?? []);
     } catch {
-      setSuggestions([]);
+      if (!hasCachedPayload) {
+        setSuggestions([]);
+      }
     } finally {
       setLoadingSuggestions(false);
     }
@@ -157,9 +206,11 @@ export function ShoppingView() {
   );
 
   async function mutateShopping(actionPayload: Record<string, unknown>, imageMap = shoppingItemImages) {
+    const authHeaders = await getBrowserAuthHeaders();
+    const cacheScope = await getClientApiCacheScope(authHeaders);
     const response = await fetch("/api/shopping", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(await getBrowserAuthHeaders()) },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(actionPayload)
     });
 
@@ -169,6 +220,7 @@ export function ShoppingView() {
       throw new Error(payload.message ?? `HTTP ${response.status}`);
     }
 
+    writeClientJsonCache(SHOPPING_STATE_CACHE_KEY, cacheScope, payload);
     applyShoppingPayload(payload, imageMap);
   }
 

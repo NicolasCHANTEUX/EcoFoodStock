@@ -6,9 +6,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { getClientApiCacheScope, getPendingClientJsonRequest, readClientJsonCache, writeClientJsonCache } from "@/lib/client-api-cache";
 import type { DashboardPayload } from "@/lib/dashboard-data";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
 import { formatQuantity } from "@/lib/units";
+
+const DASHBOARD_CACHE_KEY = "dashboard:v1";
 
 export function DashboardView() {
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -16,38 +19,62 @@ export function DashboardView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
 
     async function loadDashboardData() {
+      let hasCachedPayload = false;
+
       try {
         setLoading(true);
         setError(null);
 
         const authHeaders = await getBrowserAuthHeaders();
-        const response = await fetch("/api/dashboard", {
-          signal: controller.signal,
-          cache: "no-store",
-          headers: authHeaders
-        });
+        const cacheScope = await getClientApiCacheScope(authHeaders);
+        const cachedPayload = readClientJsonCache<DashboardPayload>(DASHBOARD_CACHE_KEY, cacheScope);
 
-        if (!response.ok) {
-          throw new Error(`API error ${response.status}`);
+        if (cachedPayload && active) {
+          hasCachedPayload = true;
+          setData(cachedPayload);
+          setLoading(false);
         }
 
-        const payload = (await response.json()) as DashboardPayload;
-        setData(payload);
+        const payload = await getPendingClientJsonRequest<DashboardPayload>(
+          `GET:/api/dashboard:${cacheScope}`,
+          async () => {
+            const response = await fetch("/api/dashboard", {
+              cache: "no-store",
+              headers: authHeaders
+            });
+
+            if (!response.ok) {
+              throw new Error(`API error ${response.status}`);
+            }
+
+            return (await response.json()) as DashboardPayload;
+          }
+        );
+
+        writeClientJsonCache(DASHBOARD_CACHE_KEY, cacheScope, payload);
+
+        if (active) {
+          setData(payload);
+        }
       } catch (loadError) {
-        if ((loadError as Error).name !== "AbortError") {
+        if ((loadError as Error).name !== "AbortError" && !hasCachedPayload && active) {
           setError("Impossible de charger les données depuis l'API.");
         }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
     loadDashboardData();
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const inventory = data?.inventory ?? [];

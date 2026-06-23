@@ -154,17 +154,33 @@ export async function POST(req: Request) {
   const previousTargetCalories = calculateTargetCalories(previousProfile);
 
   if (targetCalories !== null && targetCalories !== previousTargetCalories) {
-    await supabase
+    const { error: deactivateGoalError } = await supabase
       .from("nutrition_goals")
       .update({ is_active: false })
       .eq("user_id", appUserId)
       .eq("is_active", true);
 
-    await supabase.from("nutrition_goals").insert({
+    if (deactivateGoalError) {
+      logError("settings.nutrition_goal_deactivate_failed", new Error(deactivateGoalError.message), {
+        ...getRequestLogContext(req, "/api/settings"),
+        operation: "deactivate_current_nutrition_goal"
+      });
+      return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramÃ¨tres pour le moment." }, { status: 500 });
+    }
+
+    const { error: goalInsertError } = await supabase.from("nutrition_goals").insert({
       user_id: appUserId,
       calories_kcal: targetCalories,
       is_active: true
     });
+
+    if (goalInsertError) {
+      logError("settings.nutrition_goal_insert_failed", new Error(goalInsertError.message), {
+        ...getRequestLogContext(req, "/api/settings"),
+        operation: "insert_nutrition_goal"
+      });
+      return NextResponse.json({ ok: false, message: "Impossible d'enregistrer les paramÃ¨tres pour le moment." }, { status: 500 });
+    }
   }
 
   let historyEventCreated = false;

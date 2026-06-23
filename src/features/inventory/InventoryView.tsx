@@ -10,6 +10,7 @@ import { QuantityPromptModal } from "@/components/shared/QuantityPromptModal";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
 import { AddProductDialog } from "@/features/inventory/AddProductDialog";
+import { getClientApiCacheScope, getPendingClientJsonRequest, readClientJsonCache, writeClientJsonCache } from "@/lib/client-api-cache";
 import { formatQuantity } from "@/lib/units";
 import { routes } from "@/lib/routes";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
@@ -18,6 +19,7 @@ import type { InventoryItem } from "@/types/domain";
 const filters = ["Tous", "Frais", "Surgelés", "Sec", "DLC Proche"];
 const inventoryActionButtonClass = "h-8 min-w-0 gap-1 px-1.5 text-[11px] sm:h-9 sm:gap-2 sm:px-3 sm:text-sm";
 const inventoryActionIconClass = "h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4";
+const INVENTORY_CACHE_KEY = "inventory:v1";
 
 export function InventoryView() {
   const router = useRouter();
@@ -37,23 +39,44 @@ export function InventoryView() {
   const quantityPromptResolveRef = useRef<((value: string | null) => void) | null>(null);
 
   async function loadInventory() {
+    let hasCachedPayload = false;
+
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/inventory", {
-        cache: "no-store",
-        headers: await getBrowserAuthHeaders()
-      });
+      const authHeaders = await getBrowserAuthHeaders();
+      const cacheScope = await getClientApiCacheScope(authHeaders);
+      const cachedPayload = readClientJsonCache<{ inventory: InventoryItem[] }>(INVENTORY_CACHE_KEY, cacheScope);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (cachedPayload) {
+        hasCachedPayload = true;
+        setInventory(cachedPayload.inventory);
+        setLoading(false);
       }
 
-      const payload = (await response.json()) as { inventory: InventoryItem[] };
+      const payload = await getPendingClientJsonRequest<{ inventory: InventoryItem[] }>(
+        `GET:/api/inventory:${cacheScope}`,
+        async () => {
+          const response = await fetch("/api/inventory", {
+            cache: "no-store",
+            headers: authHeaders
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          return (await response.json()) as { inventory: InventoryItem[] };
+        }
+      );
+
+      writeClientJsonCache(INVENTORY_CACHE_KEY, cacheScope, payload);
       setInventory(payload.inventory);
     } catch {
-      setError("Impossible de charger l'inventaire depuis Supabase.");
+      if (!hasCachedPayload) {
+        setError("Impossible de charger l'inventaire depuis Supabase.");
+      }
     } finally {
       setLoading(false);
     }

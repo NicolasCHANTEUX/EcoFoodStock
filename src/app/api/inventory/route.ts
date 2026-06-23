@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRequestLogContext, logInfo } from "@/lib/observability/logger";
 import { canUseDemoMode } from "@/lib/supabase/account-context";
 import { requireHouseholdAccess } from "@/lib/supabase/household-access";
 import { mockInventory } from "@/lib/mock-data";
@@ -22,16 +23,36 @@ type InventorySummaryRow = {
 };
 
 export async function GET(req: Request) {
+  const startedAt = performance.now();
+  const requestContext = getRequestLogContext(req, "/api/inventory");
   const access = await requireHouseholdAccess(req, { allowDemo: true, requireAuth: false });
+  const afterAccess = performance.now();
 
   if (!access.ok) {
     if (canUseDemoMode()) {
+      logInfo("api.inventory_timing", "Inventory loaded from demo fallback", {
+        ...requestContext,
+        source: "api-mock",
+        inventoryCount: mockInventory.length,
+        accessMs: elapsedMs(startedAt, afterAccess),
+        totalMs: elapsedMs(startedAt, afterAccess)
+      });
+
       return NextResponse.json({ ok: true, inventory: mockInventory });
     }
+
+    logInfo("api.inventory_timing", "Inventory request rejected", {
+      ...requestContext,
+      status: access.response.status,
+      accessMs: elapsedMs(startedAt, afterAccess),
+      totalMs: elapsedMs(startedAt, afterAccess)
+    });
+
     return access.response;
   }
 
   const { supabase } = access;
+  const beforeQuery = performance.now();
 
   const { data, error } = await supabase
     .from("active_inventory_summary")
@@ -39,11 +60,31 @@ export async function GET(req: Request) {
     .eq("household_id", access.householdId)
     .order("nearest_expiration_date", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
+  const afterQuery = performance.now();
 
   if (error || !data) {
     if (canUseDemoMode()) {
+      logInfo("api.inventory_timing", "Inventory loaded from query fallback", {
+        ...requestContext,
+        householdId: access.householdId,
+        source: "api-mock",
+        inventoryCount: mockInventory.length,
+        accessMs: elapsedMs(startedAt, afterAccess),
+        queryMs: elapsedMs(beforeQuery, afterQuery),
+        totalMs: elapsedMs(startedAt, afterQuery)
+      });
+
       return NextResponse.json({ ok: true, inventory: mockInventory, warning: error?.message ?? "inventory_view_fallback" });
     }
+    logInfo("api.inventory_timing", "Inventory query failed", {
+      ...requestContext,
+      householdId: access.householdId,
+      status: 500,
+      accessMs: elapsedMs(startedAt, afterAccess),
+      queryMs: elapsedMs(beforeQuery, afterQuery),
+      totalMs: elapsedMs(startedAt, afterQuery)
+    });
+
     return NextResponse.json({ ok: false, message: "Unable to load inventory", error: error?.message }, { status: 500 });
   }
 
@@ -62,6 +103,23 @@ export async function GET(req: Request) {
     expirationLabel: formatExpirationLabel(row.nearest_expiration_date ?? undefined),
     dlcStatus: getExpirationStatus(row.nearest_expiration_date ?? undefined)
   }));
+  const afterTransform = performance.now();
+
+  logInfo("api.inventory_timing", "Inventory loaded", {
+    ...requestContext,
+    householdId: access.householdId,
+    source: "api",
+    rowCount: rows.length,
+    inventoryCount: inventory.length,
+    accessMs: elapsedMs(startedAt, afterAccess),
+    queryMs: elapsedMs(beforeQuery, afterQuery),
+    transformMs: elapsedMs(afterQuery, afterTransform),
+    totalMs: elapsedMs(startedAt, afterTransform)
+  });
 
   return NextResponse.json({ ok: true, inventory });
+}
+
+function elapsedMs(start: number, end = performance.now()) {
+  return Math.round(end - start);
 }

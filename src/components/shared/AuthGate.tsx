@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
+import { prefetchCoreAppData } from "@/lib/app-prefetch";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { clearBrowserAccountStatusCache, getBrowserAccountStatus } from "@/lib/supabase/browser-account";
 import { routes } from "@/lib/routes";
@@ -10,6 +11,7 @@ import { routes } from "@/lib/routes";
 export function AuthGate({ children }: { children: ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const checkedAccessTokenRef = useRef<string | null>(null);
+  const prefetchedAccessTokenRef = useRef<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -23,6 +25,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       if (!session) {
         checkedAccessTokenRef.current = null;
+        prefetchedAccessTokenRef.current = null;
         clearBrowserAccountStatusCache();
         setAuthorized(false);
         router.replace(loginUrl());
@@ -56,6 +59,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       if (!status.authenticated) {
         checkedAccessTokenRef.current = null;
+        prefetchedAccessTokenRef.current = null;
         clearBrowserAccountStatusCache();
         setAuthorized(false);
         router.replace(loginUrl());
@@ -71,6 +75,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       checkedAccessTokenRef.current = session.access_token;
       setAuthorized(true);
+
+      if (prefetchedAccessTokenRef.current !== session.access_token) {
+        prefetchedAccessTokenRef.current = session.access_token;
+        prefetchCoreAppData(session.access_token);
+      }
     }
 
     try {
@@ -85,6 +94,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_OUT") {
           checkedAccessTokenRef.current = null;
+          prefetchedAccessTokenRef.current = null;
           clearBrowserAccountStatusCache();
           setAuthorized(false);
           router.replace(loginUrl());
@@ -93,6 +103,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
         if (event === "TOKEN_REFRESHED") {
           checkedAccessTokenRef.current = null;
+          prefetchedAccessTokenRef.current = null;
           void handleSession(session, { force: true });
           return;
         }

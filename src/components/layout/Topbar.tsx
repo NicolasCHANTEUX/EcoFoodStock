@@ -33,7 +33,7 @@ export function Topbar() {
       const { data: sessionData } = await supabase.auth.getSession();
       const sessionUser = sessionData.session?.user;
       const sessionDisplayName = getSessionDisplayName(sessionUser?.user_metadata, sessionUser?.email ?? null);
-      const status = await getBrowserAccountStatus({ force: true });
+      const status = await getBrowserAccountStatus();
 
       if (!active) {
         return;

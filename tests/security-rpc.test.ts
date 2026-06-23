@@ -380,6 +380,53 @@ test("production observability captures errors and avoids raw server logs", () =
   }
 });
 
+test("performance-sensitive flows use scoped client caching and structured timing logs", () => {
+  const topbar = readProjectFile("src/components/layout/Topbar.tsx");
+  const authGate = readProjectFile("src/components/shared/AuthGate.tsx");
+  const clientCache = readProjectFile("src/lib/client-api-cache.ts");
+  const appPrefetch = readProjectFile("src/lib/app-prefetch.ts");
+  const dashboardView = readProjectFile("src/features/dashboard/DashboardView.tsx");
+  const inventoryView = readProjectFile("src/features/inventory/InventoryView.tsx");
+  const shoppingView = readProjectFile("src/features/shopping/ShoppingView.tsx");
+  const accountStatusRoute = readProjectFile("src/app/api/account/status/route.ts");
+  const dashboardRoute = readProjectFile("src/app/api/dashboard/route.ts");
+  const inventoryRoute = readProjectFile("src/app/api/inventory/route.ts");
+  const shoppingRoute = readProjectFile("src/app/api/shopping/route.ts");
+  const suggestionsRoute = readProjectFile("src/app/api/shopping/suggestions/route.ts");
+
+  assertIncludes(topbar, "getBrowserAccountStatus();", "Topbar account status cache");
+  assertNotIncludes(topbar, "getBrowserAccountStatus({ force: true })", "Topbar account status cache");
+
+  assertIncludes(clientCache, "const CACHE_PREFIX = \"ecofoodstock:api-cache\"", "client API cache");
+  assertIncludes(clientCache, "pendingJsonRequests", "client API request dedupe");
+  assertIncludes(clientCache, "digest(\"SHA-256\"", "client API cache scope hashing");
+  assertIncludes(clientCache, "MAX_CACHE_VALUE_BYTES", "client API cache size bound");
+
+  assertIncludes(dashboardView, "readClientJsonCache<DashboardPayload>", "dashboard stale-while-revalidate");
+  assertIncludes(dashboardView, "writeClientJsonCache(DASHBOARD_CACHE_KEY", "dashboard stale-while-revalidate");
+  assertIncludes(inventoryView, "readClientJsonCache<{ inventory: InventoryItem[] }>", "inventory stale-while-revalidate");
+  assertIncludes(inventoryView, "writeClientJsonCache(INVENTORY_CACHE_KEY", "inventory stale-while-revalidate");
+  assertIncludes(shoppingView, "SHOPPING_STATE_CACHE_KEY", "shopping stale-while-revalidate");
+  assertIncludes(shoppingView, "SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX", "shopping suggestions cache");
+
+  assertIncludes(authGate, "prefetchCoreAppData(session.access_token)", "post-login prefetch");
+  assertIncludes(appPrefetch, "Promise.allSettled", "post-login prefetch");
+  assertNotIncludes(appPrefetch, "/api/shopping/suggestions", "post-login prefetch should not eagerly hit Open Food Facts suggestions");
+
+  assertIncludes(suggestionsRoute, "MAX_SUGGESTIONS_PER_RESPONSE = 8", "bounded shopping suggestions");
+  assertIncludes(suggestionsRoute, "OFF_SEARCH_LIMIT = 8", "bounded shopping suggestions");
+  assertIncludes(suggestionsRoute, "MAX_HYDRATED_CANDIDATES = 2", "bounded shopping suggestions");
+  assertIncludes(suggestionsRoute, "SUGGESTION_CACHE_TTL_MS = 15 * 60 * 1000", "shopping suggestions cache TTL");
+  assertNotIncludes(suggestionsRoute, ".slice(0, 16)", "bounded shopping suggestions");
+
+  assertIncludes(accountStatusRoute, "api.account_status_timing", "account status timings");
+  assertIncludes(dashboardRoute, "api.dashboard_timing", "dashboard timings");
+  assertIncludes(inventoryRoute, "api.inventory_timing", "inventory timings");
+  assertIncludes(shoppingRoute, "api.shopping_timing", "shopping timings");
+  assertIncludes(shoppingRoute, "api.shopping_mutation_timing", "shopping mutation timings");
+  assertIncludes(suggestionsRoute, "api.shopping_suggestions_timing", "shopping suggestions timings");
+});
+
 test("image proxy has bounded upstream fetches, CDN caching and miss-only rate limits", () => {
   const imageRoute = readProjectFile("src/app/api/images/route.ts");
 
@@ -477,6 +524,10 @@ test("settings history does not store sensitive profile snapshots", () => {
   assertNotIncludes(settingsRoute, "previous_profile", "settings history");
   assertNotIncludes(settingsRoute, "next_profile", "settings history");
   assertNotIncludes(settingsRoute, "original_error", "settings history");
+  assertIncludes(settingsRoute, "deactivateGoalError", "settings nutrition goal errors");
+  assertIncludes(settingsRoute, "settings.nutrition_goal_deactivate_failed", "settings nutrition goal errors");
+  assertIncludes(settingsRoute, "goalInsertError", "settings nutrition goal errors");
+  assertIncludes(settingsRoute, "settings.nutrition_goal_insert_failed", "settings nutrition goal errors");
   assertIncludes(settingsRoute, "let warning: string | undefined", "settings history partial failure");
   assertIncludes(settingsRoute, "...(warning ? { warning } : {})", "settings history partial failure");
   assertNotIncludes(settingsRoute, "{ ok: false, message: \"Paramètres enregistrés", "settings history partial failure");

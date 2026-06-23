@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxiedOffImageUrl } from "@/lib/image-proxy";
+import { getRequestLogContext, logInfo } from "@/lib/observability/logger";
 import { lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts, type OpenFoodFactsLookupResult } from "@/lib/open-food-facts";
 import { defaultSettingsProfile, type DietType } from "@/lib/settings";
 import { resolveAccountContext } from "@/lib/supabase/account-context";
@@ -58,7 +59,10 @@ const preferredSuggestionBarcodes: Record<string, string> = {
   tomatoes: "3276558775128"
 };
 
-const SUGGESTION_CACHE_TTL_MS = 5 * 60 * 1000;
+const SUGGESTION_CACHE_TTL_MS = 15 * 60 * 1000;
+const MAX_SUGGESTIONS_PER_RESPONSE = 8;
+const OFF_SEARCH_LIMIT = 8;
+const MAX_HYDRATED_CANDIDATES = 2;
 
 type SuggestionCacheEntry = {
   expiresAt: number;
@@ -68,9 +72,22 @@ type SuggestionCacheEntry = {
 const suggestionCache = new Map<DietType, SuggestionCacheEntry>();
 
 export async function GET(req: Request) {
+  const startedAt = performance.now();
+  const requestContext = getRequestLogContext(req, "/api/shopping/suggestions");
   const diet = await resolveSuggestionDiet(req);
+  const afterDiet = performance.now();
   const forceRefresh = new URL(req.url).searchParams.get("refresh") === "1";
   const suggestions = await loadSuggestionsForDiet(diet, forceRefresh);
+  const afterSuggestions = performance.now();
+
+  logInfo("api.shopping_suggestions_timing", "Shopping suggestions loaded", {
+    ...requestContext,
+    forceRefresh,
+    suggestionCount: suggestions.length,
+    dietMs: elapsedMs(startedAt, afterDiet),
+    suggestionsMs: elapsedMs(afterDiet, afterSuggestions),
+    totalMs: elapsedMs(startedAt, afterSuggestions)
+  });
 
   return NextResponse.json(
     { ok: true, diet, suggestions },
@@ -104,7 +121,7 @@ async function loadSuggestionsForDiet(diet: DietType, forceRefresh: boolean) {
 }
 
 async function buildSuggestionsForDiet(diet: DietType) {
-  const compatibleQueries = curatedQueries.filter((entry) => entry.diets.includes(diet)).slice(0, 16);
+  const compatibleQueries = curatedQueries.filter((entry) => entry.diets.includes(diet)).slice(0, MAX_SUGGESTIONS_PER_RESPONSE);
 
   return Promise.all(
     compatibleQueries.map(async (entry) => {
@@ -167,7 +184,7 @@ async function pickSuggestionProduct(entry: CuratedSuggestionEntry) {
   }
 
   for (const query of entry.queries) {
-    const results = await searchOpenFoodFactsProducts(query, 24, { sortBy: "unique_scans_n" }).catch(() => []);
+    const results = await searchOpenFoodFactsProducts(query, OFF_SEARCH_LIMIT, { image: true, sortBy: "unique_scans_n" }).catch(() => []);
     const candidateWithImage = await findCandidateWithImage(results);
 
     if (candidateWithImage) {
@@ -176,15 +193,6 @@ async function pickSuggestionProduct(entry: CuratedSuggestionEntry) {
 
     if (results[0]) {
       fallbackProduct = fallbackProduct ?? results[0];
-    }
-  }
-
-  for (const query of entry.queries) {
-    const imageResults = await searchOpenFoodFactsProducts(query, 24, { image: true, sortBy: "unique_scans_n" }).catch(() => []);
-    const candidateWithImage = await findCandidateWithImage(imageResults);
-
-    if (candidateWithImage) {
-      return candidateWithImage;
     }
   }
 
@@ -198,7 +206,7 @@ async function findCandidateWithImage(results: OpenFoodFactsLookupResult[]) {
     return directImageCandidate;
   }
 
-  for (const candidate of results.slice(0, 8)) {
+  for (const candidate of results.slice(0, MAX_HYDRATED_CANDIDATES)) {
     if (!candidate.barcode) {
       continue;
     }
@@ -229,4 +237,8 @@ function titleCase(value: string) {
     .filter(Boolean)
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function elapsedMs(start: number, end = performance.now()) {
+  return Math.round(end - start);
 }
