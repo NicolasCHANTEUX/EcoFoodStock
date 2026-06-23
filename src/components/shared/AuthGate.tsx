@@ -37,6 +37,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         return;
       }
 
+      setAuthorized(true);
+
       let status;
 
       try {
@@ -44,7 +46,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
       } catch {
         checkedAccessTokenRef.current = null;
         clearBrowserAccountStatusCache();
-        setAuthorized(false);
         window.setTimeout(() => {
           if (active) {
             void handleSession(session, { force: true });

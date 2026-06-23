@@ -228,6 +228,27 @@ test("health summary is rate-limited and never exposes raw server errors", () =>
   assertNotIncludes(healthSummaryRoute, "String(error)", "health summary route");
 });
 
+test("SEO metadata and protected app shell support faster initial rendering", () => {
+  const rootLayout = readProjectFile("src/app/layout.tsx");
+  const authGate = readProjectFile("src/components/shared/AuthGate.tsx");
+
+  assertIncludes(rootLayout, "metadataBase", "root SEO metadata");
+  assertIncludes(rootLayout, "applicationName: \"EcoFoodStock\"", "root SEO metadata");
+  assertIncludes(rootLayout, "réduire le gaspillage", "root SEO metadata");
+  assertIncludes(rootLayout, "openGraph", "root SEO metadata");
+  assertIncludes(rootLayout, "robots", "root SEO metadata");
+  assertOrdered(
+    authGate,
+    [
+      "if (!options.force && checkedAccessTokenRef.current === session.access_token)",
+      "setAuthorized(true);",
+      "status = await getBrowserAccountStatus({ force: options.force });"
+    ],
+    "AuthGate optimistic session rendering"
+  );
+  assertNotIncludes(authGate, "catch {\n        checkedAccessTokenRef.current = null;\n        clearBrowserAccountStatusCache();\n        setAuthorized(false);", "AuthGate status retry should not blank an existing session");
+});
+
 test("CSP can be switched to a nonce-based strict script policy", () => {
   const nextConfig = readProjectFile("next.config.ts");
   const middleware = readProjectFile("src/middleware.ts");

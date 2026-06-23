@@ -8,9 +8,28 @@ import { isStrictCspEnabled } from "@/lib/security/csp";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  title: "EcoFoodStock",
-  description: "Assistant domestique pour stock alimentaire et DLC",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://eco-food-stock.vercel.app"),
+  applicationName: "EcoFoodStock",
+  title: {
+    default: "EcoFoodStock",
+    template: "%s · EcoFoodStock"
+  },
+  description:
+    "EcoFoodStock aide à gérer son stock alimentaire, suivre les DLC, préparer ses courses et réduire le gaspillage au quotidien.",
   manifest: "/manifest.webmanifest",
+  openGraph: {
+    title: "EcoFoodStock",
+    description:
+      "Gérez votre stock alimentaire, suivez les DLC, préparez vos courses et réduisez le gaspillage au quotidien.",
+    url: "/",
+    siteName: "EcoFoodStock",
+    locale: "fr_FR",
+    type: "website"
+  },
+  robots: {
+    index: true,
+    follow: true
+  },
   appleWebApp: {
     capable: true,
     title: "EcoFoodStock"
