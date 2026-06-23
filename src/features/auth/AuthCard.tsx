@@ -28,6 +28,8 @@ export function AuthCard() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLikelyInAppBrowser, setIsLikelyInAppBrowser] = useState(false);
+  const [copyLinkMessage, setCopyLinkMessage] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get("token");
@@ -35,6 +37,10 @@ export function AuthCard() {
   const safeNextPath = useMemo(() => getSafeRedirectTarget(nextPath), [nextPath]);
   const isRecoverySearch = searchParams.get("reset") === "1" || searchParams.get("type") === "recovery";
   const [passwordResetMode, setPasswordResetMode] = useState(isRecoverySearch);
+
+  useEffect(() => {
+    setIsLikelyInAppBrowser(isLikelyInAppOAuthBrowser(window.navigator.userAgent));
+  }, []);
 
   useEffect(() => {
     if (isRecoverySearch || window.location.hash.includes("type=recovery")) {
@@ -75,6 +81,17 @@ export function AuthCard() {
       active = false;
     };
   }, [inviteToken, isRecoverySearch, passwordResetMode, router, safeNextPath]);
+
+  async function copyCurrentLoginLink() {
+    setCopyLinkMessage(null);
+
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyLinkMessage("Lien copié. Ouvre Safari ou Chrome, puis colle-le dans la barre d'adresse.");
+    } catch {
+      setCopyLinkMessage("Impossible de copier automatiquement. Utilise le menu de l'application pour ouvrir dans Safari ou Chrome.");
+    }
+  }
 
   async function handleOAuth(provider: "google" | "apple") {
     if (!acceptedLegalTerms) {
@@ -351,6 +368,25 @@ export function AuthCard() {
           </form>
         ) : (
           <>
+            {isLikelyInAppBrowser ? (
+              <div role="note" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-semibold">Connexion Google/Apple peut être bloquée ici</p>
+                <p className="mt-1 leading-5">
+                  Tu sembles ouvrir EcoFoodStock depuis un navigateur intégré. Ouvre ce lien dans Safari ou Chrome,
+                  ou utilise la connexion par email.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button type="button" variant="secondary" className="h-9 px-3 text-sm" onClick={() => void copyCurrentLoginLink()}>
+                    Copier le lien
+                  </Button>
+                  <span className="text-xs text-amber-800">
+                    Dans Snapchat/Instagram/TikTok, cherche “Ouvrir dans Safari/Chrome”.
+                  </span>
+                </div>
+                {copyLinkMessage ? <p className="mt-2 text-xs text-amber-800">{copyLinkMessage}</p> : null}
+              </div>
+            ) : null}
+
             <div className="space-y-3">
               <Button variant="secondary" className="w-full" onClick={() => handleOAuth("google")} disabled={loading}>
                 Continuer avec Google
@@ -508,4 +544,22 @@ function normalizeDisplayName(value: string) {
 
 function isStrongEnoughPassword(value: string) {
   return value.length >= 8 && /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
+function isLikelyInAppOAuthBrowser(userAgent: string) {
+  const normalizedUserAgent = userAgent.toLowerCase();
+  const inAppBrowserMarkers = [
+    "snapchat",
+    "instagram",
+    "fbav",
+    "fban",
+    "fb_iab",
+    "tiktok",
+    "musically",
+    "bytedance",
+    "line/",
+    "micromessenger"
+  ];
+
+  return inAppBrowserMarkers.some((marker) => normalizedUserAgent.includes(marker));
 }

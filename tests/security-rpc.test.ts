@@ -388,6 +388,20 @@ test("production observability captures errors and avoids raw server logs", () =
   }
 });
 
+test("login warns users when OAuth may be blocked in in-app browsers", () => {
+  const authCard = readProjectFile("src/features/auth/AuthCard.tsx");
+
+  assertIncludes(authCard, "isLikelyInAppOAuthBrowser(window.navigator.userAgent)", "login in-app browser warning");
+  assertIncludes(authCard, "Connexion Google/Apple peut être bloquée ici", "login in-app browser warning");
+  assertIncludes(authCard, "Ouvre ce lien dans Safari ou Chrome", "login in-app browser warning");
+  assertIncludes(authCard, "Copier le lien", "login in-app browser warning");
+  assertIncludes(authCard, "navigator.clipboard.writeText(window.location.href)", "login link copy");
+  assertIncludes(authCard, "\"snapchat\"", "in-app browser markers");
+  assertIncludes(authCard, "\"instagram\"", "in-app browser markers");
+  assertIncludes(authCard, "\"tiktok\"", "in-app browser markers");
+  assertIncludes(authCard, "\"fbav\"", "in-app browser markers");
+});
+
 test("performance-sensitive flows use scoped client caching and structured timing logs", () => {
   const topbar = readProjectFile("src/components/layout/Topbar.tsx");
   const authGate = readProjectFile("src/components/shared/AuthGate.tsx");
