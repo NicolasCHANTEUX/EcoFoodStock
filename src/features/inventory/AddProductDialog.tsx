@@ -320,9 +320,16 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
 
     const trimmedName = name.trim();
     const numericQuantity = Number(quantity.replace(",", "."));
+    const cleanBarcode = barcode.trim();
+    const productImageUrl = lookup.status === "found" ? toPersistableImageUrl(lookup.imageUrl) : undefined;
 
     if (!trimmedName) {
       setValidationMessage("Le nom du produit est obligatoire.");
+      return;
+    }
+
+    if (cleanBarcode && !/^\d{6,18}$/.test(cleanBarcode)) {
+      setValidationMessage("Le code-barres doit contenir entre 6 et 18 chiffres.");
       return;
     }
 
@@ -340,11 +347,11 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
         body: JSON.stringify({
           product: {
             name: trimmedName,
-            barcode: barcode.trim() || undefined,
+            barcode: cleanBarcode || undefined,
             brand: lookup.status === "found" ? lookup.brand : undefined,
             category: lookup.status === "found" ? lookup.category : undefined,
-            imageUrl: lookup.status === "found" ? lookup.imageUrl : undefined,
-            source: barcode.trim() ? "open_food_facts" : "manual",
+            imageUrl: productImageUrl,
+            source: cleanBarcode ? "open_food_facts" : "manual",
             default_storage_area: storageArea,
             default_unit: unit
           },
@@ -356,17 +363,15 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       });
 
       if (!response.ok) {
-        const errorMessage = await response.text();
-
-        throw new Error(errorMessage || "save_failed");
+        throw new Error(await getInventoryBatchErrorMessage(response));
       }
 
       await response.json();
       onPersisted?.();
       resetForm();
       onClose();
-    } catch {
-      setSubmitError("Impossible d'ajouter le produit. Vérifie la connexion puis réessaie.");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Impossible d'ajouter le produit.");
     } finally {
       setIsSubmitting(false);
     }
@@ -592,4 +597,27 @@ function getCameraAccessErrorMessage(error: unknown) {
   }
 
   return "Impossible d'accéder à la caméra. Vérifie les permissions puis réessaie.";
+}
+
+function toPersistableImageUrl(imageUrl: string | undefined) {
+  if (!imageUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(imageUrl);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function getInventoryBatchErrorMessage(response: Response) {
+  const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+  if (response.status === 400) {
+    return "Données invalides. Vérifie le code-barres, la quantité, la date ou l'image du produit.";
+  }
+
+  return payload?.message ?? "Impossible d'ajouter le produit pour le moment.";
 }

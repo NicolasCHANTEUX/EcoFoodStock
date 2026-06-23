@@ -152,11 +152,14 @@ async function resolveInventoryProductId(supabase: SupabaseServerClient, product
     name: product.name,
     brand: product.brand ?? null,
     category: product.category ?? null,
-    image_url: product.imageUrl ?? null,
     source: product.source ?? "manual",
     default_storage_area: product.default_storage_area ?? "other",
     default_unit: product.default_unit ?? "pieces"
   };
+
+  if (product.imageUrl !== undefined) {
+    upsertPayload.image_url = product.imageUrl;
+  }
 
   if (product.barcode) {
     upsertPayload.barcode = product.barcode;

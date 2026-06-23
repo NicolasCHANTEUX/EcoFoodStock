@@ -308,6 +308,8 @@ test("service-role and backup operations have guardrails and a restore runbook",
 
 test("inventory batch creation validates bounded product fields", () => {
   const inventoryBatchRoute = readProjectFile("src/app/api/inventory/batches/route.ts");
+  const addProductDialog = readProjectFile("src/features/inventory/AddProductDialog.tsx");
+  const inventoryService = readProjectFile("src/services/inventory-service.ts");
 
   assertIncludes(inventoryBatchRoute, "z.string().uuid().optional()", "inventory batch validation");
   assertIncludes(inventoryBatchRoute, "z.string().regex(/^\\d{6,18}$/).optional()", "inventory batch validation");
@@ -316,6 +318,12 @@ test("inventory batch creation validates bounded product fields", () => {
   assertIncludes(inventoryBatchRoute, "source: z.enum([\"manual\", \"scan\", \"open_food_facts\"]).optional()", "inventory batch validation");
   assertIncludes(inventoryBatchRoute, "quantity: z.coerce.number().positive().max(100_000)", "inventory batch validation");
   assertIncludes(inventoryBatchRoute, "notes: nullableText(1_000)", "inventory batch validation");
+  assertIncludes(addProductDialog, "const cleanBarcode = barcode.trim()", "inventory batch frontend validation");
+  assertIncludes(addProductDialog, "!/^\\d{6,18}$/.test(cleanBarcode)", "inventory batch frontend validation");
+  assertIncludes(addProductDialog, "toPersistableImageUrl(lookup.imageUrl)", "inventory batch image URL validation");
+  assertIncludes(addProductDialog, "getInventoryBatchErrorMessage(response)", "inventory batch error message");
+  assertIncludes(inventoryService, "if (product.imageUrl !== undefined)", "inventory product image persistence");
+  assertIncludes(inventoryService, "upsertPayload.image_url = product.imageUrl", "inventory product image persistence");
 });
 
 test("CI builds Next.js and pins the Supabase CLI version", () => {
