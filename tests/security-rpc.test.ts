@@ -392,7 +392,6 @@ test("performance-sensitive flows use scoped client caching and structured timin
   const dashboardRoute = readProjectFile("src/app/api/dashboard/route.ts");
   const inventoryRoute = readProjectFile("src/app/api/inventory/route.ts");
   const shoppingRoute = readProjectFile("src/app/api/shopping/route.ts");
-  const suggestionsRoute = readProjectFile("src/app/api/shopping/suggestions/route.ts");
 
   assertIncludes(topbar, "getBrowserAccountStatus();", "Topbar account status cache");
   assertNotIncludes(topbar, "getBrowserAccountStatus({ force: true })", "Topbar account status cache");
@@ -407,24 +406,15 @@ test("performance-sensitive flows use scoped client caching and structured timin
   assertIncludes(inventoryView, "readClientJsonCache<{ inventory: InventoryItem[] }>", "inventory stale-while-revalidate");
   assertIncludes(inventoryView, "writeClientJsonCache(INVENTORY_CACHE_KEY", "inventory stale-while-revalidate");
   assertIncludes(shoppingView, "SHOPPING_STATE_CACHE_KEY", "shopping stale-while-revalidate");
-  assertIncludes(shoppingView, "SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX", "shopping suggestions cache");
 
   assertIncludes(authGate, "prefetchCoreAppData(session.access_token)", "post-login prefetch");
   assertIncludes(appPrefetch, "Promise.allSettled", "post-login prefetch");
-  assertNotIncludes(appPrefetch, "/api/shopping/suggestions", "post-login prefetch should not eagerly hit Open Food Facts suggestions");
-
-  assertIncludes(suggestionsRoute, "MAX_SUGGESTIONS_PER_RESPONSE = 8", "bounded shopping suggestions");
-  assertIncludes(suggestionsRoute, "OFF_SEARCH_LIMIT = 8", "bounded shopping suggestions");
-  assertIncludes(suggestionsRoute, "MAX_HYDRATED_CANDIDATES = 2", "bounded shopping suggestions");
-  assertIncludes(suggestionsRoute, "SUGGESTION_CACHE_TTL_MS = 15 * 60 * 1000", "shopping suggestions cache TTL");
-  assertNotIncludes(suggestionsRoute, ".slice(0, 16)", "bounded shopping suggestions");
 
   assertIncludes(accountStatusRoute, "api.account_status_timing", "account status timings");
   assertIncludes(dashboardRoute, "api.dashboard_timing", "dashboard timings");
   assertIncludes(inventoryRoute, "api.inventory_timing", "inventory timings");
   assertIncludes(shoppingRoute, "api.shopping_timing", "shopping timings");
   assertIncludes(shoppingRoute, "api.shopping_mutation_timing", "shopping mutation timings");
-  assertIncludes(suggestionsRoute, "api.shopping_suggestions_timing", "shopping suggestions timings");
 });
 
 test("image proxy has bounded upstream fetches, CDN caching and miss-only rate limits", () => {

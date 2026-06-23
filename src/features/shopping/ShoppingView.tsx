@@ -17,7 +17,6 @@ const SHOPPING_SUGGESTIONS_STORAGE_KEY = "ecofoodstock:shopping-suggestions-hidd
 const SHOPPING_ITEM_IMAGES_STORAGE_KEY = "ecofoodstock:shopping-item-images";
 const SHOPPING_COMPLETION_DISMISSALS_STORAGE_KEY = "ecofoodstock:shopping-completion-dismissals";
 const SHOPPING_STATE_CACHE_KEY = "shopping-state:v1";
-const SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX = "shopping-suggestions:v1";
 const COMPLETED_SESSION_VISIBLE_MS = 24 * 60 * 60 * 1000;
 
 type ShoppingItemImageMap = Record<string, string>;
@@ -107,8 +106,6 @@ export function ShoppingView() {
   }, [applyShoppingPayload]);
 
   const loadSuggestions = useCallback(async (forceRefresh = false) => {
-    let hasCachedPayload = false;
-
     try {
       setLoadingSuggestions(true);
       const currentDiet = readStoredDiet();
@@ -123,42 +120,20 @@ export function ShoppingView() {
       }
 
       const query = params.toString() ? `?${params.toString()}` : "";
-      const authHeaders = await getBrowserAuthHeaders();
-      const cacheScope = await getClientApiCacheScope(authHeaders);
-      const cacheKey = `${SHOPPING_SUGGESTIONS_CACHE_KEY_PREFIX}:${currentDiet ?? "default"}`;
 
-      if (!forceRefresh) {
-        const cachedPayload = readClientJsonCache<{ suggestions: ShoppingSuggestion[] }>(cacheKey, cacheScope);
+      const response = await fetch(`/api/shopping/suggestions${query}`, {
+        cache: "no-store",
+        headers: await getBrowserAuthHeaders()
+      });
 
-        if (cachedPayload) {
-          hasCachedPayload = true;
-          setSuggestions(cachedPayload.suggestions ?? []);
-          setLoadingSuggestions(false);
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      const payload = await getPendingClientJsonRequest<{ suggestions: ShoppingSuggestion[] }>(
-        `GET:/api/shopping/suggestions${query}:${cacheScope}`,
-        async () => {
-          const response = await fetch(`/api/shopping/suggestions${query}`, {
-            cache: forceRefresh ? "no-store" : "default",
-            headers: authHeaders
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          return (await response.json()) as { suggestions: ShoppingSuggestion[] };
-        }
-      );
-
-      writeClientJsonCache(cacheKey, cacheScope, payload);
+      const payload = (await response.json()) as { suggestions: ShoppingSuggestion[] };
       setSuggestions(payload.suggestions ?? []);
     } catch {
-      if (!hasCachedPayload) {
-        setSuggestions([]);
-      }
+      setSuggestions([]);
     } finally {
       setLoadingSuggestions(false);
     }
