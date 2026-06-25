@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Barcode, Camera, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
+import { persistableOffImageUrl } from "@/lib/image-proxy";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
 import type { QuantityUnit, StorageArea } from "@/types/domain";
 
@@ -125,7 +126,8 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       setLookup({ status: "loading" });
 
       const response = await fetch(`/api/products/lookup/${encodeURIComponent(cleanBarcode)}`, {
-        cache: "no-store"
+        cache: "no-store",
+        headers: await getBrowserAuthHeaders()
       });
 
       if (response.status === 404) {
@@ -600,16 +602,7 @@ function getCameraAccessErrorMessage(error: unknown) {
 }
 
 function toPersistableImageUrl(imageUrl: string | undefined) {
-  if (!imageUrl) {
-    return undefined;
-  }
-
-  try {
-    const parsed = new URL(imageUrl);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : undefined;
-  } catch {
-    return undefined;
-  }
+  return persistableOffImageUrl(imageUrl, window.location.origin);
 }
 
 async function getInventoryBatchErrorMessage(response: Response) {

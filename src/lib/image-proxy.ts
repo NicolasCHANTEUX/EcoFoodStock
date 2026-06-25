@@ -31,6 +31,20 @@ export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOpti
   }
 }
 
+export function persistableOffImageUrl(url?: string | null, baseUrl = "http://localhost") {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url, baseUrl);
+    const sourceUrl = parsed.pathname === "/api/images" ? parsed.searchParams.get("src") : parsed.toString();
+    return proxiedOffImageUrl(sourceUrl, { proxy: false });
+  } catch {
+    return undefined;
+  }
+}
+
 function optimizeOffImageUrl(url: URL, size: OffImageSize) {
   const nextUrl = new URL(url.toString());
   nextUrl.pathname = nextUrl.pathname.replace(/\.(100|200|400)(\.(?:jpe?g|png|webp))$/i, `.${size}$2`);

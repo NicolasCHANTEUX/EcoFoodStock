@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { daysUntilExpiration, formatExpirationLabel, getExpirationStatus } from "@/lib/expiration";
-import { proxiedOffImageUrl } from "@/lib/image-proxy";
+import { persistableOffImageUrl, proxiedOffImageUrl } from "@/lib/image-proxy";
 import { planInventoryBatchConsumption } from "@/lib/inventory-actions";
 import { createInventoryLineId, normalizeStorageArea } from "@/lib/inventory-lines";
 import { clearOpenFoodFactsCache, lookupOpenFoodFactsProduct, searchOpenFoodFactsProducts } from "@/lib/open-food-facts";
@@ -270,6 +270,21 @@ test("Open Food Facts image proxy refuses non-allowlisted image hosts", () => {
   assert.equal(proxiedOffImageUrl("https://images.openfoodfacts.org/images/products/123/front.400.jpg"), "/api/images?src=https%3A%2F%2Fimages.openfoodfacts.org%2Fimages%2Fproducts%2F123%2Ffront.200.jpg");
   assert.equal(proxiedOffImageUrl("https://example.com/image.jpg"), undefined);
   assert.equal(proxiedOffImageUrl("not-a-url"), undefined);
+});
+
+test("proxied Open Food Facts image URLs can be persisted as source URLs", () => {
+  assert.equal(
+    persistableOffImageUrl(
+      "/api/images?src=https%3A%2F%2Fimages.openfoodfacts.org%2Fimages%2Fproducts%2F123%2Ffront.400.jpg",
+      "http://localhost:3000"
+    ),
+    "https://images.openfoodfacts.org/images/products/123/front.200.jpg"
+  );
+  assert.equal(
+    persistableOffImageUrl("https://images.openfoodfacts.org/images/products/456/front.400.jpg"),
+    "https://images.openfoodfacts.org/images/products/456/front.200.jpg"
+  );
+  assert.equal(persistableOffImageUrl("/api/images?src=https%3A%2F%2Fexample.com%2Fimage.jpg"), undefined);
 });
 
 test("structured logs redact sensitive fields and keep correlation metadata", () => {
