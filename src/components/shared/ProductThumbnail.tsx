@@ -1,6 +1,7 @@
 "use client";
 
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import { persistableOffImageUrl } from "@/lib/image-proxy";
 
 type ProductThumbnailProps = {
   name: string;
@@ -12,11 +13,17 @@ type ProductThumbnailProps = {
 const IMAGE_RETRY_DELAYS_MS = [1_200, 3_500];
 
 export function ProductThumbnail({ name, imageUrl, fallbackLabel, className }: ProductThumbnailProps) {
-  const [hasImageError, setHasImageError] = useState(false);
+  const [imageSource, setImageSource] = useState<"primary" | "direct" | "fallback">("primary");
   const [retryCount, setRetryCount] = useState(0);
   const retryTimeoutRef = useRef<number | null>(null);
-  const imageSrc = imageUrl ? appendRetryParam(imageUrl, retryCount) : undefined;
-  const showImage = Boolean(imageUrl) && !hasImageError;
+  const directImageUrl = imageUrl?.startsWith("/api/images") ? persistableOffImageUrl(imageUrl) : undefined;
+  const imageSrc =
+    imageSource === "direct" && directImageUrl
+      ? directImageUrl
+      : imageSource === "primary" && imageUrl
+        ? appendRetryParam(imageUrl, retryCount)
+        : undefined;
+  const showImage = Boolean(imageSrc);
   const initials = (fallbackLabel ?? name)
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 2)
@@ -24,7 +31,7 @@ export function ProductThumbnail({ name, imageUrl, fallbackLabel, className }: P
 
   useEffect(() => {
     clearImageRetryTimeout(retryTimeoutRef);
-    setHasImageError(false);
+    setImageSource("primary");
     setRetryCount(0);
 
     return () => clearImageRetryTimeout(retryTimeoutRef);
@@ -42,18 +49,24 @@ export function ProductThumbnail({ name, imageUrl, fallbackLabel, className }: P
           loading="lazy"
           referrerPolicy="no-referrer"
           onError={() => {
-            if (canRetryImage(imageUrl, retryCount)) {
+            if (imageSource === "primary" && directImageUrl && directImageUrl !== imageUrl) {
+              setRetryCount(0);
+              setImageSource("direct");
+              return;
+            }
+
+            if (imageSource === "primary" && canRetryImage(imageUrl, retryCount)) {
               const nextRetryCount = retryCount + 1;
-              setHasImageError(true);
+              setImageSource("fallback");
               clearImageRetryTimeout(retryTimeoutRef);
               retryTimeoutRef.current = window.setTimeout(() => {
                 setRetryCount(nextRetryCount);
-                setHasImageError(false);
+                setImageSource("primary");
               }, IMAGE_RETRY_DELAYS_MS[retryCount]);
               return;
             }
 
-            setHasImageError(true);
+            setImageSource("fallback");
           }}
         />
       ) : (

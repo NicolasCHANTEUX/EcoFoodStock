@@ -7,6 +7,36 @@ type OffImageUrlOptions = {
 };
 
 export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOptions = {}) {
+  const parsed = normalizeOffImageUrl(url);
+
+  if (!parsed) {
+    return undefined;
+  }
+
+  const imageUrl = options.size ? optimizeOffImageUrl(parsed, options.size) : parsed.toString();
+
+  if (options.proxy === false) {
+    return imageUrl;
+  }
+
+  return `/api/images?src=${encodeURIComponent(imageUrl)}`;
+}
+
+export function persistableOffImageUrl(url?: string | null, baseUrl = "http://localhost") {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url, baseUrl);
+    const sourceUrl = parsed.pathname === "/api/images" ? parsed.searchParams.get("src") : parsed.toString();
+    return normalizeOffImageUrl(sourceUrl)?.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeOffImageUrl(url?: string | null) {
   if (!url) {
     return undefined;
   }
@@ -19,27 +49,10 @@ export function proxiedOffImageUrl(url?: string | null, options: OffImageUrlOpti
     }
 
     parsed.protocol = "https:";
-    const optimizedUrl = optimizeOffImageUrl(parsed, options.size ?? "200");
-
-    if (options.proxy === false) {
-      return optimizedUrl;
-    }
-
-    return `/api/images?src=${encodeURIComponent(optimizedUrl)}`;
-  } catch {
-    return undefined;
-  }
-}
-
-export function persistableOffImageUrl(url?: string | null, baseUrl = "http://localhost") {
-  if (!url) {
-    return undefined;
-  }
-
-  try {
-    const parsed = new URL(url, baseUrl);
-    const sourceUrl = parsed.pathname === "/api/images" ? parsed.searchParams.get("src") : parsed.toString();
-    return proxiedOffImageUrl(sourceUrl, { proxy: false });
+    parsed.username = "";
+    parsed.password = "";
+    parsed.hash = "";
+    return parsed;
   } catch {
     return undefined;
   }

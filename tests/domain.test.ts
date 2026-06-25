@@ -267,7 +267,8 @@ test("rate limit client IP strategy only trusts configured proxy headers", () =>
 });
 
 test("Open Food Facts image proxy refuses non-allowlisted image hosts", () => {
-  assert.equal(proxiedOffImageUrl("https://images.openfoodfacts.org/images/products/123/front.400.jpg"), "/api/images?src=https%3A%2F%2Fimages.openfoodfacts.org%2Fimages%2Fproducts%2F123%2Ffront.200.jpg");
+  assert.equal(proxiedOffImageUrl("https://images.openfoodfacts.org/images/products/123/front.400.jpg"), "/api/images?src=https%3A%2F%2Fimages.openfoodfacts.org%2Fimages%2Fproducts%2F123%2Ffront.400.jpg");
+  assert.equal(proxiedOffImageUrl("https://images.openfoodfacts.org/images/products/123/front.400.jpg", { proxy: false, size: "200" }), "https://images.openfoodfacts.org/images/products/123/front.200.jpg");
   assert.equal(proxiedOffImageUrl("https://example.com/image.jpg"), undefined);
   assert.equal(proxiedOffImageUrl("not-a-url"), undefined);
 });
@@ -278,11 +279,11 @@ test("proxied Open Food Facts image URLs can be persisted as source URLs", () =>
       "/api/images?src=https%3A%2F%2Fimages.openfoodfacts.org%2Fimages%2Fproducts%2F123%2Ffront.400.jpg",
       "http://localhost:3000"
     ),
-    "https://images.openfoodfacts.org/images/products/123/front.200.jpg"
+    "https://images.openfoodfacts.org/images/products/123/front.400.jpg"
   );
   assert.equal(
     persistableOffImageUrl("https://images.openfoodfacts.org/images/products/456/front.400.jpg"),
-    "https://images.openfoodfacts.org/images/products/456/front.200.jpg"
+    "https://images.openfoodfacts.org/images/products/456/front.400.jpg"
   );
   assert.equal(persistableOffImageUrl("/api/images?src=https%3A%2F%2Fexample.com%2Fimage.jpg"), undefined);
 });
