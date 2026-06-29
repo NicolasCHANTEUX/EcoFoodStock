@@ -240,12 +240,16 @@ erDiagram
 
 - Le stock et la liste de courses appartiennent au foyer.
 - Les objectifs nutritionnels appartiennent a l'utilisateur.
+- Les macros, poids, objectifs et donnees sportives restent prives par utilisateur, meme dans un foyer partage, dans une logique RGPD.
 - Les membres voient les memes stocks et courses en temps reel.
 
 ### Nutrition
 
 - Les valeurs nutritionnelles produits doivent etre stockees pour 100g/ml.
 - Les apports reels sont calcules depuis les quantites consommees.
+- Le suivi macro quotidien doit etre affiche dans la vue Sante et compare aux objectifs utilisateur.
+- Une recette cuisinee dans un foyer peut repartir ses macros entre les membres selectionnes.
+- Les conversions non standard sont estimees avec Open Food Facts quand possible et restent corrigeables.
 - Le mode Grand Public affiche des scores pedagogiques.
 - Le mode Sportif affiche calories et macros precisement.
 
@@ -285,6 +289,7 @@ MVP 2 :
 - Like/dislike/favoris
 - Dashboard sante Grand Public
 - Dashboard macros Sportif
+- Suivi macro quotidien en temps reel ou quasi temps reel
 - Notifications DLC
 
 MVP 3 :

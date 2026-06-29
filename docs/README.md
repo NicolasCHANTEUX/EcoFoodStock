@@ -7,6 +7,7 @@ Ce dossier regroupe les documents projet qui ne sont pas le README principal.
 - `cadrage-mvp-ecofoodstock.md` : perimetre, decisions et Definition of Done du MVP 1.
 - `ToDo.md` : backlog courant, priorites de stabilisation et pistes MVP 2+.
 - `mvp1-checklist.md` : checklist manuelle de validation finale MVP 1.
+- `mvp2-contrats-recettes-cuisine-notifications.md` : contrats metier MVP 2 pour recettes, mode cuisine, allergies et notifications.
 
 ## Conception
 

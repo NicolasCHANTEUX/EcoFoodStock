@@ -1,6 +1,6 @@
 # ToDo EcoFoodStock
 
-Derniere mise a jour : 2026-06-18
+Derniere mise a jour : 2026-06-29
 
 ## Etat global
 
@@ -113,12 +113,21 @@ Le code contient maintenant les principaux blocs attendus :
 
 ## MVP 2 - Produit
 
-- [ ] Recettes intelligentes.
-- [ ] Mode cuisine.
+- [x] Formaliser les contrats metier du lot 1 dans `mvp2-contrats-recettes-cuisine-notifications.md`.
+- [x] Formaliser la strategie API recettes, Open Food Facts, recettes utilisateur et recherche d'aliments.
+- [ ] Recherche Open Food Facts commune : inventaire, ingredients de recettes et futures courses.
+- [ ] Ajout inventaire enrichi par recherche texte avec import image, allergenes et macros.
+- [ ] Vue Sante : suivi macro quotidien en temps reel ou quasi temps reel.
+- [ ] Journal nutritionnel personnel avec donnees sante privees par utilisateur.
+- [ ] Creation de recettes utilisateur depuis inventaire, recherche alimentaire ou saisie libre.
+- [ ] Recettes intelligentes : suggestions, statuts de faisabilite, scoring DLC et feedback.
+- [ ] Mes recettes et favoris pour recettes locales ou sauvegardees depuis une source externe.
+- [ ] Adaptateur fournisseur recette externe, avec Spoonacular comme candidat principal a evaluer.
+- [ ] Mode cuisine : portions partielles, deduction proportionnelle, repartition macro foyer et undo.
 - [ ] Suggestions de courses predictives avec scoring.
-- [ ] Gestion allergies et incompatibilites par membre.
+- [ ] Gestion allergies, alertes inevitables, incompatibilites et ingredients bloques par membre.
 - [ ] Permissions foyer plus fines.
-- [ ] Notifications DLC.
+- [ ] Notifications DLC groupees quotidiennement.
 - [ ] Bilan hebdomadaire.
 - [ ] Dashboard nutrition plus complet.
 - [ ] Internationalisation francais / anglais.

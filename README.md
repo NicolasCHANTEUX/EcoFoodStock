@@ -138,6 +138,7 @@ La checklist manuelle complete est dans `docs/mvp1-checklist.md`.
 - `docs/README.md`
 - `docs/cadrage-mvp-ecofoodstock.md`
 - `docs/ToDo.md`
+- `docs/mvp2-contrats-recettes-cuisine-notifications.md`
 - `docs/mvp1-checklist.md`
 - `docs/architecture-ecofoodstock.md`
 - `docs/revue-captures-ecrans-ecofoodstock.md`
