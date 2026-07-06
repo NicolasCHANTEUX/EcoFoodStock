@@ -1,12 +1,15 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Barcode, Camera, Search, X } from "lucide-react";
+import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { Barcode, Camera, ChevronLeft, Keyboard, Loader2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ProductThumbnail } from "@/components/shared/ProductThumbnail";
+import { cn } from "@/lib/cn";
 import { persistableOffImageUrl } from "@/lib/image-proxy";
 import { getBrowserAuthHeaders } from "@/lib/supabase/browser-auth";
 import type { QuantityUnit, StorageArea } from "@/types/domain";
+
+type AddProductStep = "choice" | "scanner" | "resolvingProduct" | "form";
 
 type LookupState =
   | { status: "idle" }
@@ -27,7 +30,7 @@ type LookupState =
 
 type AddProductDialogProps = {
   open: boolean;
-  initialMode?: "manual" | "scan";
+  initialMode?: "choice" | "manual" | "scan";
   onClose: () => void;
   onPersisted?: () => void;
 };
@@ -48,12 +51,14 @@ const storageOptions: { label: string; value: StorageArea }[] = [
   { label: "Sec", value: "dry" },
   { label: "Autre", value: "other" }
 ];
+
 const MAX_VIDEO_INIT_ATTEMPTS = 20;
 const VIDEO_INIT_RETRY_DELAY_MS = 50;
 const fieldClass = "block space-y-1.5 text-sm font-medium";
 const controlClass = "h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base outline-none focus:border-brand-500 sm:h-11 sm:text-sm";
 
-export function AddProductDialog({ initialMode = "manual", open, onClose, onPersisted }: AddProductDialogProps) {
+export function AddProductDialog({ initialMode = "choice", open, onClose, onPersisted }: AddProductDialogProps) {
+  const [step, setStep] = useState<AddProductStep>("choice");
   const [barcode, setBarcode] = useState("");
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -70,12 +75,50 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
   const streamRef = useRef<MediaStream | null>(null);
   const frameRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<{ stop: () => void } | null>(null);
-  const initialModeStartedRef = useRef(false);
   const startCameraScanRef = useRef<(() => Promise<void>) | null>(null);
+  const resolvingScanRef = useRef(false);
+
+  const stopCamera = useCallback(() => {
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (zxingControlsRef.current) {
+      zxingControlsRef.current.stop();
+      zxingControlsRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setIsScanning(false);
+  }, []);
+
+  const resetForm = useCallback(() => {
+    stopCamera();
+    resolvingScanRef.current = false;
+    setBarcode("");
+    setName("");
+    setQuantity("1");
+    setUnit("pieces");
+    setStorageArea("fresh");
+    setExpirationDate("");
+    setLookup({ status: "idle" });
+    setSubmitError(null);
+    setValidationMessage(null);
+    setScanError(null);
+  }, [stopCamera]);
 
   useEffect(() => {
     return () => stopCamera();
-  }, []);
+  }, [stopCamera]);
 
   useEffect(() => {
     startCameraScanRef.current = startCameraScan;
@@ -83,7 +126,16 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
 
   useEffect(() => {
     if (!open) {
-      initialModeStartedRef.current = false;
+      stopCamera();
+      return;
+    }
+
+    resetForm();
+    setStep(getInitialStep(initialMode));
+  }, [initialMode, open, resetForm, stopCamera]);
+
+  useEffect(() => {
+    if (!open) {
       return;
     }
 
@@ -98,40 +150,45 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
   }, [open]);
 
   useEffect(() => {
-    if (!open || initialMode !== "scan" || initialModeStartedRef.current) {
+    if (!open || step !== "scanner") {
       return;
     }
 
-    initialModeStartedRef.current = true;
     const timeoutId = window.setTimeout(() => {
       void startCameraScanRef.current?.();
     }, 120);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialMode, open]);
+  }, [open, step]);
 
   if (!open) {
     return null;
   }
 
-  async function lookupProduct(barcodeValue?: string) {
+  async function resolveBarcode(barcodeValue?: string) {
     const cleanBarcode = (barcodeValue ?? barcode).trim();
 
     if (!cleanBarcode) {
       setLookup({ status: "error", message: "Renseigne d'abord un code-barres." });
+      setStep("form");
       return;
     }
 
-    try {
-      setLookup({ status: "loading" });
+    setBarcode(cleanBarcode);
+    setScanError(null);
+    setSubmitError(null);
+    setValidationMessage(null);
+    setLookup({ status: "loading" });
+    setStep("resolvingProduct");
 
+    try {
       const response = await fetch(`/api/products/lookup/${encodeURIComponent(cleanBarcode)}`, {
-        cache: "no-store",
-        headers: await getBrowserAuthHeaders()
+        cache: "no-store"
       });
 
       if (response.status === 404) {
         setLookup({ status: "not-found" });
+        setStep("form");
         return;
       }
 
@@ -152,7 +209,6 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
         };
       };
 
-      setBarcode(cleanBarcode);
       setName(payload.product.name);
       if (payload.product.quantityValue && payload.product.quantityValue > 0) {
         setQuantity(String(payload.product.quantityValue));
@@ -172,14 +228,31 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
         quantityUnit: payload.product.quantityUnit,
         storageArea: payload.product.storageArea ?? "other"
       });
+      setStep("form");
     } catch {
-      setLookup({ status: "error", message: "Impossible de joindre Open Food Facts." });
+      setLookup({ status: "error", message: "Impossible de joindre Open Food Facts. Tu peux compléter le produit manuellement." });
+      setStep("form");
+    } finally {
+      resolvingScanRef.current = false;
     }
+  }
+
+  async function handleDetectedBarcode(detectedCode: string) {
+    const cleanBarcode = detectedCode.trim();
+
+    if (!cleanBarcode || resolvingScanRef.current) {
+      return;
+    }
+
+    resolvingScanRef.current = true;
+    stopCamera();
+    await resolveBarcode(cleanBarcode);
   }
 
   async function startCameraScan() {
     setScanError(null);
     setValidationMessage(null);
+    resolvingScanRef.current = false;
 
     if (typeof window === "undefined") {
       return;
@@ -198,6 +271,7 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
     const BarcodeDetectorCtor = (window as unknown as { BarcodeDetector?: new (options?: { formats?: string[] }) => { detect: (target: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>> } }).BarcodeDetector;
     stopCamera();
     setIsScanning(true);
+
     let videoElement: HTMLVideoElement | null = null;
     for (let attempt = 0; attempt < MAX_VIDEO_INIT_ATTEMPTS; attempt += 1) {
       if (videoRef.current) {
@@ -233,13 +307,11 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
             const detectedCode = barcodes.find((entry) => Boolean(entry.rawValue))?.rawValue?.trim();
 
             if (detectedCode) {
-              stopCamera();
-              setBarcode(detectedCode);
-              await lookupProduct(detectedCode);
+              await handleDetectedBarcode(detectedCode);
               return;
             }
           } catch {
-            // keep scanning
+            // Continue scanning while the camera stream is alive.
           }
 
           frameRef.current = window.requestAnimationFrame(() => {
@@ -257,12 +329,9 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
       const reader = new BrowserMultiFormatReader();
       zxingControlsRef.current = await reader.decodeFromVideoElement(videoElement, (result) => {
         const detectedCode = result?.getText()?.trim();
-        if (!detectedCode) {
-          return;
+        if (detectedCode) {
+          void handleDetectedBarcode(detectedCode);
         }
-        stopCamera();
-        setBarcode(detectedCode);
-        void lookupProduct(detectedCode);
       });
     } catch (error) {
       stopCamera();
@@ -270,40 +339,28 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
     }
   }
 
-  function stopCamera() {
-    if (frameRef.current !== null) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-
-    if (zxingControlsRef.current) {
-      zxingControlsRef.current.stop();
-      zxingControlsRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    setIsScanning(false);
+  function showChoice() {
+    stopCamera();
+    setScanError(null);
+    setValidationMessage(null);
+    setStep("choice");
   }
 
-  function resetForm() {
-    setBarcode("");
-    setName("");
-    setQuantity("1");
-    setUnit("pieces");
-    setStorageArea("fresh");
-    setExpirationDate("");
-    setLookup({ status: "idle" });
-    setSubmitError(null);
-    setValidationMessage(null);
+  function showScanner() {
+    stopCamera();
     setScanError(null);
+    setValidationMessage(null);
+    setStep("scanner");
+  }
+
+  function showManualForm() {
+    stopCamera();
+    setScanError(null);
+    setValidationMessage(null);
+    if (lookup.status === "loading") {
+      setLookup({ status: "idle" });
+    }
+    setStep("form");
   }
 
   function closeDialog() {
@@ -379,17 +436,24 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
     }
   }
 
+  const header = getHeaderCopy(step, lookup);
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/35 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:items-center sm:p-4">
       <form
         onSubmit={(event) => void submitForm(event)}
-        className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-soft sm:max-h-[calc(100dvh-2rem)]"
+        className={cn(
+          "flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-soft",
+          step === "scanner"
+            ? "min-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:min-h-0 sm:max-h-[calc(100dvh-2rem)]"
+            : "max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:max-h-[calc(100dvh-2rem)]"
+        )}
       >
         <div className="shrink-0 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-lg font-bold sm:text-xl">Ajouter un produit</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">Scanne un code-barres ou saisis le produit manuellement.</p>
+              <h2 className="text-lg font-bold sm:text-xl">{header.title}</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">{header.description}</p>
             </div>
             <button
               type="button"
@@ -403,182 +467,347 @@ export function AddProductDialog({ initialMode = "manual", open, onClose, onPers
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4">
-          <div className="space-y-3 sm:space-y-4">
-            <label className={fieldClass}>
-              <span>Code-barres</span>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  className={`${controlClass} col-span-2`}
-                  value={barcode}
-                  onChange={(event) => setBarcode(event.target.value)}
-                  inputMode="numeric"
-                  placeholder="Ex : 7376280645028"
-                />
-                <Button type="button" variant="secondary" className="h-10 gap-2 px-3" onClick={() => void lookupProduct()} disabled={isSubmitting}>
-                  <Search className="h-4 w-4" />
-                  Chercher
-                </Button>
-                <Button type="button" variant="secondary" className="h-10 gap-2 px-3" onClick={() => void startCameraScan()} disabled={isSubmitting || isScanning}>
-                  <Camera className="h-4 w-4" />
-                  Scanner
-                </Button>
-              </div>
-            </label>
-
-          {isScanning ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
-              <video ref={videoRef} className="h-40 w-full rounded-lg bg-black object-cover sm:h-52" muted playsInline />
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm text-slate-600">Recherche du code-barres...</p>
-                <Button type="button" variant="ghost" className="h-8 px-3 text-xs" onClick={stopCamera}>
-                  Arrêter
-                </Button>
-              </div>
-            </div>
+        <div className={cn("flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4", step === "scanner" && "flex flex-col")}>
+          {step === "choice" ? (
+            <ChoiceStep onScan={showScanner} onManual={showManualForm} onBarcodeEntry={showManualForm} />
           ) : null}
 
-          {scanError ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              {scanError}
-            </div>
-          ) : null}
-
-          {lookup.status === "loading" ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-              Recherche du produit sur Open Food Facts...
-            </div>
-          ) : null}
-
-          {lookup.status === "found" ? (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-              <div className="mb-2 flex items-start gap-3 font-semibold">
-                <ProductThumbnail name={lookup.label} imageUrl={lookup.imageUrl} fallbackLabel={lookup.label} className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-white text-xs font-bold text-emerald-700" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Barcode className="h-4 w-4" />
-                    <span>Produit trouvé</span>
-                  </div>
-                  <p className="truncate font-semibold text-emerald-900">{lookup.label}</p>
-                </div>
-              </div>
-              {lookup.brand ? <p className="text-emerald-700">Marque: {lookup.brand}</p> : null}
-              {lookup.category ? <p className="text-emerald-700">Catégorie: {lookup.category}</p> : null}
-              {lookup.quantityText ? <p className="text-emerald-700">Quantité: {lookup.quantityText}</p> : null}
-              {lookup.quantityValue && lookup.quantityUnit ? (
-                <p className="text-emerald-700">
-                  Préremplissage: {lookup.quantityValue} {lookup.quantityUnit === "g" ? "grammes" : lookup.quantityUnit === "ml" ? "millilitres" : "pièces"}
-                </p>
-              ) : null}
-              {lookup.storageArea ? (
-                <p className="text-emerald-700">
-                  Zone suggérée: {lookup.storageArea === "fresh" ? "Frais" : lookup.storageArea === "frozen" ? "Surgelés" : lookup.storageArea === "dry" ? "Sec" : "Autre"}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
-          {lookup.status === "not-found" ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Aucun code détecté dans le catalogue. Continue en saisie manuelle.
-            </div>
-          ) : null}
-
-          {lookup.status === "error" ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-              {lookup.message}
-            </div>
-          ) : null}
-
-          <label className={fieldClass}>
-            <span>Nom du produit</span>
-            <input
-              className={controlClass}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Ex : Riz basmati"
+          {step === "scanner" ? (
+            <ScannerStep
+              isScanning={isScanning}
+              scanError={scanError}
+              videoRef={videoRef}
+              onRetry={showScanner}
+              onCancel={showChoice}
+              onManual={showManualForm}
             />
-          </label>
+          ) : null}
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className={fieldClass}>
-              <span>Quantité</span>
-              <input
-                className={controlClass}
-                value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
-                inputMode="decimal"
-              />
-            </label>
+          {step === "resolvingProduct" ? <ResolvingStep barcode={barcode} /> : null}
 
-            <label className={fieldClass}>
-              <span>Unité</span>
-              <select
-                className={controlClass}
-                value={unit}
-                onChange={(event) => setUnit(event.target.value as QuantityUnit)}
-              >
-                {unitOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {step === "form" ? (
+            <FormStep
+              barcode={barcode}
+              name={name}
+              quantity={quantity}
+              unit={unit}
+              storageArea={storageArea}
+              expirationDate={expirationDate}
+              lookup={lookup}
+              validationMessage={validationMessage}
+              submitError={submitError}
+              isSubmitting={isSubmitting}
+              onBarcodeChange={setBarcode}
+              onNameChange={setName}
+              onQuantityChange={setQuantity}
+              onUnitChange={setUnit}
+              onStorageAreaChange={setStorageArea}
+              onExpirationDateChange={setExpirationDate}
+              onLookup={() => void resolveBarcode()}
+            />
+          ) : null}
+        </div>
+
+        {step === "form" ? (
+          <div className="grid shrink-0 grid-cols-[0.85fr_1.15fr] gap-2 border-t border-slate-100 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:grid-cols-2 sm:px-5 sm:pb-4">
+            <Button variant="secondary" className="h-10" onClick={showChoice} disabled={isSubmitting}>
+              Retour
+            </Button>
+            <Button type="submit" className="h-10" disabled={isSubmitting}>
+              {isSubmitting ? "Ajout..." : "Ajouter au stock"}
+            </Button>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className={fieldClass}>
-              <span>Zone</span>
-              <select
-                className={controlClass}
-                value={storageArea}
-                onChange={(event) => setStorageArea(event.target.value as StorageArea)}
-              >
-                {storageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={fieldClass}>
-              <span>DLC facultative</span>
-              <input
-                className={controlClass}
-                value={expirationDate}
-                onChange={(event) => setExpirationDate(event.target.value)}
-                type="date"
-              />
-            </label>
-          </div>
-        </div>
-
-        {validationMessage ? (
-          <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{validationMessage}</p>
         ) : null}
-
-        {submitError ? (
-          <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{submitError}</p>
-        ) : null}
-
-        {isSubmitting ? (
-          <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">Ajout en cours...</p>
-        ) : null}
-        </div>
-
-        <div className="grid shrink-0 grid-cols-[0.85fr_1.15fr] gap-2 border-t border-slate-100 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:grid-cols-2 sm:px-5 sm:pb-4">
-          <Button variant="secondary" className="h-10" onClick={closeDialog} disabled={isSubmitting}>
-            Annuler
-          </Button>
-          <Button type="submit" className="h-10" disabled={isSubmitting}>
-            {isSubmitting ? "Ajout..." : "Ajouter au stock"}
-          </Button>
-        </div>
       </form>
     </div>
   );
+}
+
+function ChoiceStep({ onScan, onManual, onBarcodeEntry }: { onScan: () => void; onManual: () => void; onBarcodeEntry: () => void }) {
+  return (
+    <div className="flex min-h-[18rem] flex-col justify-center gap-3 py-3 sm:min-h-[22rem] sm:gap-4">
+      <button
+        type="button"
+        onClick={onScan}
+        className="group flex min-h-28 w-full items-center gap-4 rounded-2xl bg-brand-600 p-4 text-left text-white transition hover:bg-brand-700 sm:min-h-32 sm:p-5"
+      >
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+          <Camera className="h-7 w-7" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-lg font-bold sm:text-xl">Scanner un produit</span>
+          <span className="mt-1 block text-sm leading-5 text-white/85">Le plus rapide pour reconnaître un code-barres.</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={onManual}
+        className="flex min-h-16 w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left text-slate-900 transition hover:bg-slate-50"
+      >
+        <Keyboard className="h-5 w-5 shrink-0 text-slate-500" />
+        <span className="min-w-0">
+          <span className="block font-semibold">Ajouter manuellement</span>
+          <span className="mt-0.5 block text-sm text-slate-500">Pour un produit sans code ou si le scan ne passe pas.</span>
+        </span>
+      </button>
+
+      <button type="button" onClick={onBarcodeEntry} className="mx-auto rounded-lg px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
+        Saisir un code-barres
+      </button>
+    </div>
+  );
+}
+
+function ScannerStep({
+  isScanning,
+  scanError,
+  videoRef,
+  onRetry,
+  onCancel,
+  onManual
+}: {
+  isScanning: boolean;
+  scanError: string | null;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  onRetry: () => void;
+  onCancel: () => void;
+  onManual: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col gap-3">
+      <div className="relative min-h-[22rem] flex-1 overflow-hidden rounded-2xl bg-slate-950 sm:min-h-[24rem]">
+        <video ref={videoRef} className="h-full min-h-[22rem] w-full object-cover sm:min-h-[24rem]" muted playsInline />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/35" />
+        <div className="pointer-events-none absolute inset-x-8 top-1/2 h-28 -translate-y-1/2 rounded-2xl border-2 border-white/85 shadow-[0_0_0_999px_rgba(15,23,42,0.28)] sm:inset-x-16 sm:h-32" />
+        <div className="absolute inset-x-4 bottom-4 rounded-xl bg-white/92 px-3 py-2 text-center text-sm font-medium text-slate-800 backdrop-blur">
+          {scanError ? scanError : isScanning ? "Place le code-barres dans le cadre" : "Préparation de la caméra..."}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button type="button" variant="secondary" className="h-10 gap-2" onClick={onCancel}>
+          <ChevronLeft className="h-4 w-4" />
+          Annuler
+        </Button>
+        <Button type="button" variant={scanError ? "primary" : "secondary"} className="h-10 gap-2" onClick={scanError ? onRetry : onManual}>
+          {scanError ? <Camera className="h-4 w-4" /> : <Keyboard className="h-4 w-4" />}
+          {scanError ? "Réessayer" : "Saisie manuelle"}
+        </Button>
+      </div>
+
+      {scanError ? (
+        <Button type="button" variant="ghost" className="h-10 w-full" onClick={onManual}>
+          Ajouter manuellement
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ResolvingStep({ barcode }: { barcode: string }) {
+  return (
+    <div className="flex min-h-[22rem] flex-col items-center justify-center text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+        <Loader2 className="h-7 w-7 animate-spin" />
+      </div>
+      <p className="mt-4 text-base font-semibold text-slate-950">Recherche du produit...</p>
+      <p className="mt-1 max-w-xs text-sm leading-6 text-slate-500">Code détecté : {barcode}</p>
+    </div>
+  );
+}
+
+function FormStep({
+  barcode,
+  name,
+  quantity,
+  unit,
+  storageArea,
+  expirationDate,
+  lookup,
+  validationMessage,
+  submitError,
+  isSubmitting,
+  onBarcodeChange,
+  onNameChange,
+  onQuantityChange,
+  onUnitChange,
+  onStorageAreaChange,
+  onExpirationDateChange,
+  onLookup
+}: {
+  barcode: string;
+  name: string;
+  quantity: string;
+  unit: QuantityUnit;
+  storageArea: StorageArea;
+  expirationDate: string;
+  lookup: LookupState;
+  validationMessage: string | null;
+  submitError: string | null;
+  isSubmitting: boolean;
+  onBarcodeChange: (nextValue: string) => void;
+  onNameChange: (nextValue: string) => void;
+  onQuantityChange: (nextValue: string) => void;
+  onUnitChange: (nextValue: QuantityUnit) => void;
+  onStorageAreaChange: (nextValue: StorageArea) => void;
+  onExpirationDateChange: (nextValue: string) => void;
+  onLookup: () => void;
+}) {
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      {lookup.status === "found" ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <div className="flex items-start gap-3 font-semibold">
+            <ProductThumbnail
+              name={lookup.label}
+              imageUrl={lookup.imageUrl}
+              fallbackLabel={lookup.label}
+              className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-white text-xs font-bold text-emerald-700"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <Barcode className="h-4 w-4" />
+                <span>Produit détecté</span>
+              </div>
+              <p className="truncate font-semibold text-emerald-900">{lookup.label}</p>
+              {lookup.brand ? <p className="truncate text-emerald-700">Marque : {lookup.brand}</p> : null}
+            </div>
+          </div>
+          {lookup.category ? <p className="mt-2 text-emerald-700">Catégorie : {lookup.category}</p> : null}
+          {lookup.quantityText ? <p className="text-emerald-700">Quantité : {lookup.quantityText}</p> : null}
+        </div>
+      ) : null}
+
+      {lookup.status === "not-found" ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Produit non trouvé. Le code-barres est conservé, complète les infos manuellement.
+        </div>
+      ) : null}
+
+      {lookup.status === "error" ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          {lookup.message}
+        </div>
+      ) : null}
+
+      <label className={fieldClass}>
+        <span>Code-barres</span>
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <input
+            className={controlClass}
+            value={barcode}
+            onChange={(event) => onBarcodeChange(event.target.value)}
+            inputMode="numeric"
+            placeholder="Ex : 7376280645028"
+          />
+          <Button type="button" variant="secondary" className="h-10 gap-2 px-3 sm:h-11" onClick={onLookup} disabled={isSubmitting}>
+            <Search className="h-4 w-4" />
+            <span className="hidden sm:inline">Chercher</span>
+          </Button>
+        </div>
+      </label>
+
+      <label className={fieldClass}>
+        <span>Nom du produit</span>
+        <input className={controlClass} value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="Ex : Riz basmati" />
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className={fieldClass}>
+          <span>Quantité</span>
+          <input className={controlClass} value={quantity} onChange={(event) => onQuantityChange(event.target.value)} inputMode="decimal" />
+        </label>
+
+        <label className={fieldClass}>
+          <span>Unité</span>
+          <select className={controlClass} value={unit} onChange={(event) => onUnitChange(event.target.value as QuantityUnit)}>
+            {unitOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className={fieldClass}>
+          <span>Zone</span>
+          <select className={controlClass} value={storageArea} onChange={(event) => onStorageAreaChange(event.target.value as StorageArea)}>
+            {storageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className={fieldClass}>
+          <span>DLC facultative</span>
+          <input className={controlClass} value={expirationDate} onChange={(event) => onExpirationDateChange(event.target.value)} type="date" />
+        </label>
+      </div>
+
+      {validationMessage ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{validationMessage}</p> : null}
+      {submitError ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{submitError}</p> : null}
+      {isSubmitting ? <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">Ajout en cours...</p> : null}
+    </div>
+  );
+}
+
+function getInitialStep(initialMode: AddProductDialogProps["initialMode"]): AddProductStep {
+  if (initialMode === "scan") {
+    return "scanner";
+  }
+
+  if (initialMode === "manual") {
+    return "form";
+  }
+
+  return "choice";
+}
+
+function getHeaderCopy(step: AddProductStep, lookup: LookupState) {
+  if (step === "scanner") {
+    return {
+      title: "Scanner un produit",
+      description: "Place le code-barres dans le cadre."
+    };
+  }
+
+  if (step === "resolvingProduct") {
+    return {
+      title: "Produit détecté",
+      description: "On récupère les informations du produit."
+    };
+  }
+
+  if (step === "form") {
+    if (lookup.status === "found") {
+      return {
+        title: "Confirmer le produit",
+        description: "Ajuste la quantité, la zone et la DLC avant l'ajout."
+      };
+    }
+
+    if (lookup.status === "not-found" || lookup.status === "error") {
+      return {
+        title: "Compléter le produit",
+        description: "Le code est gardé, il reste les infos utiles à remplir."
+      };
+    }
+
+    return {
+      title: "Ajouter manuellement",
+      description: "Renseigne les infos du produit à ajouter au stock."
+    };
+  }
+
+  return {
+    title: "Ajouter un produit",
+    description: "Scanne ton produit ou ajoute-le manuellement."
+  };
 }
 
 function getCameraAccessErrorMessage(error: unknown) {

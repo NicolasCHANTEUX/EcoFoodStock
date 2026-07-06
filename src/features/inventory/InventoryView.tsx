@@ -29,7 +29,7 @@ export function InventoryView() {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("Tous");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [addDialogMode, setAddDialogMode] = useState<"manual" | "scan">("manual");
+  const [addDialogMode, setAddDialogMode] = useState<"choice" | "manual" | "scan">("choice");
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [quantityPrompt, setQuantityPrompt] = useState<{
     title: string;
@@ -196,7 +196,7 @@ export function InventoryView() {
         <Button
           className="gap-2"
           onClick={() => {
-            setAddDialogMode("manual");
+            setAddDialogMode("choice");
             setAddDialogOpen(true);
           }}
         >
